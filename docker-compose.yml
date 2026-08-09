@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  postgres_db_local:
+    image: postgres:16-alpine
+    container_name: postgres_db_local
+    restart: always
+    ports:
+      - "6666:5432"
+    environment:
+      POSTGRES_DB: busbooking
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d busbooking"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - busbooking-network
+
+volumes:
+  postgres_data:
+
+networks:
+  busbooking-network:
+    driver: bridge

@@ -1,0 +1,16 @@
+spring:
+  application:
+    name: busbooking
+  datasource:
+    url: jdbc:postgresql://localhost:6666/busbooking
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
