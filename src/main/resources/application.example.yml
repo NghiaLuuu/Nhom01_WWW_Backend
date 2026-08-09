@@ -1,0 +1,45 @@
+spring:
+  application:
+    name: busbooking
+  datasource:
+    url: jdbc:postgresql://localhost:6666/busbooking
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: your-email@gmail.com
+    password: your-app-password
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
+jwt:
+  secret: 5367566B59703373367639792F423F4528482B4D6251655468576D5A71347437
+  expiration: 3600000
+  refresh-expiration: 604800000
+
+spring.ai:
+  openai:
+    api-key: your-openai-api-key
+    chat:
+      options:
+        model: gpt-4o-mini

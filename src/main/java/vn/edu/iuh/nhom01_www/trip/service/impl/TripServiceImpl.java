@@ -33,4 +33,31 @@ public class TripServiceImpl implements TripService {
 
         tripRepository.delete(trip);
     }
+
+    @Override
+    public List<Trip> searchTrips(String departureLocation, String arrivalLocation, String date) {
+        return java.util.Collections.emptyList();
+    }
+
+    @Override
+    public Trip getTripById(Long id) {
+        return tripRepository.findById(id).orElseThrow(() -> new CustomException("Trip not found", HttpStatus.NOT_FOUND));
+    }
+
+    @Override
+    public Trip createTrip(vn.edu.iuh.nhom01_www.trip.dto.TripRequest req) {
+        return null; // Stub
+    }
+
+    @Override
+    public Trip updateTrip(Long id, vn.edu.iuh.nhom01_www.trip.dto.TripRequest req) {
+        return null; // Stub
+    }
+
+    @Override
+    public Trip updateTripStatus(Long id, String status) {
+        Trip trip = getTripById(id);
+        trip.setStatus(status);
+        return tripRepository.save(trip);
+    }
 }

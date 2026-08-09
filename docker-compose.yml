@@ -21,6 +21,15 @@ services:
     networks:
       - busbooking-network
 
+  redis_local:
+    image: redis:7-alpine
+    container_name: redis_local
+    restart: always
+    ports:
+      - "6379:6379"
+    networks:
+      - busbooking-network
+
 volumes:
   postgres_data:
 
