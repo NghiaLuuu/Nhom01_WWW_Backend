@@ -1,10 +1,45 @@
 package vn.edu.iuh.nhom01_www.user.service;
 
+import vn.edu.iuh.nhom01_www.chatbot.dto.ChatbotRequest;
+import vn.edu.iuh.nhom01_www.route.dto.RouteRequest;
+import vn.edu.iuh.nhom01_www.route.model.Route;
+import vn.edu.iuh.nhom01_www.user.dto.LoginRequest;
+import vn.edu.iuh.nhom01_www.user.dto.RegisterRequest;
+import vn.edu.iuh.nhom01_www.user.dto.StaffRequest;
+import vn.edu.iuh.nhom01_www.user.dto.VerifyOtpRequest;
+import vn.edu.iuh.nhom01_www.user.model.Customer;
+import vn.edu.iuh.nhom01_www.user.model.Staff;
+import vn.edu.iuh.nhom01_www.vehicle.dto.VehicleRequest;
+import vn.edu.iuh.nhom01_www.vehicle.model.Vehicle;
+
+import java.util.List;
+import java.util.UUID;
+
 public interface UserService {
-    Object register(vn.edu.iuh.nhom01_www.user.dto.RegisterRequest req);
-    Object verifyOtp(vn.edu.iuh.nhom01_www.user.dto.VerifyOtpRequest req);
-    String login(vn.edu.iuh.nhom01_www.user.dto.LoginRequest req);
-    java.util.List<vn.edu.iuh.nhom01_www.user.model.Staff> getAllStaffs();
-    java.util.List<vn.edu.iuh.nhom01_www.user.model.Customer> getAllCustomers();
+    Object register(RegisterRequest request);
+    Object verifyOtp(VerifyOtpRequest request);
+    String login(LoginRequest request);
+
+    List<Staff> getAllStaffs();
+    Staff createStaff(StaffRequest request);
+    Staff updateStaff(UUID id, StaffRequest request);
+    Staff updateStaffStatus(UUID id, String status);
+
+    List<Customer> getAllCustomers();
+    Customer updateCustomerStatus(UUID id, String status);
+
     Object getRevenueStatistics();
+
+    List<Route> getAllRoutes();
+    Route getRouteById(Long id);
+    Route createRoute(RouteRequest request);
+    Route updateRoute(Long id, RouteRequest request);
+    void deleteRoute(Long id);
+
+    List<Vehicle> getAllVehicles();
+    Vehicle createVehicle(VehicleRequest request);
+    Vehicle updateVehicle(Long id, VehicleRequest request);
+    void deleteVehicle(Long id);
+
+    Object ask(ChatbotRequest request);
 }
