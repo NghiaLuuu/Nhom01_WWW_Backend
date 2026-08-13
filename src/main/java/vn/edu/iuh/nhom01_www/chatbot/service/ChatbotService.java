@@ -24,7 +24,7 @@ public class ChatbotService {
     private final ChatModel chatModel;
     private final TableMetadataRepository tableMetadataRepository;
     private final JdbcTemplate jdbcTemplate;
-    private final ObjectMapper objectMapper;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public Object ask(ChatbotRequest request) {
         String userQuestion = request.getQuestion();
@@ -32,23 +32,23 @@ public class ChatbotService {
         // 1. Fetch Metadata
         List<TableMetadata> allMetadata = tableMetadataRepository.findAll();
         if (allMetadata.isEmpty()) {
-            return Map.of("answer", "H? th?ng chua du?c c?u hình Metadata d? tr? l?i câu h?i.");
+            return Map.of("answer", "H? th?ng chua du?c c?u hï¿½nh Metadata d? tr? l?i cï¿½u h?i.");
         }
 
         String metadataContext = allMetadata.stream()
                 .map(m -> "- B?ng '" + m.getTableName() + "': " + m.getShortDescription())
-                .collect(Collectors.joining("
-"));
+                .collect(Collectors.joining("\n" +
+""));
 
         // Stage 1: Routing
         String routingPrompt = String.format(
-                "Ngu?i dùng h?i: '%s'.
-" +
-                "Du?i dây là các b?ng d? li?u trong h? th?ng:
-%s
-" +
-                "D?a vào câu h?i, hãy cho bi?t c?n truy v?n d? li?u t? nh?ng b?ng nào? " +
-                "Hãy tr? l?i CH? B?NG TÊN CÁC B?NG cách nhau b?ng d?u ph?y, không gi?i thích gì thêm.",
+                "Ngu?i dï¿½ng h?i: '%s'.\n" +
+"" +
+                "Du?i dï¿½y lï¿½ cï¿½c b?ng d? li?u trong h? th?ng:\n" +
+"%s\n" +
+"" +
+                "D?a vï¿½o cï¿½u h?i, hï¿½y cho bi?t c?n truy v?n d? li?u t? nh?ng b?ng nï¿½o? " +
+                "Hï¿½y tr? l?i CH? B?NG Tï¿½N Cï¿½C B?NG cï¿½ch nhau b?ng d?u ph?y, khï¿½ng gi?i thï¿½ch gï¿½ thï¿½m.",
                 userQuestion, metadataContext);
         
         String chosenTablesStr = chatModel.call(routingPrompt).trim();
@@ -58,23 +58,23 @@ public class ChatbotService {
         String schemaContext = allMetadata.stream()
                 .filter(m -> chosenTablesStr.contains(m.getTableName()))
                 .map(m -> m.getSchemaDefinition())
-                .collect(Collectors.joining("
-
-"));
+                .collect(Collectors.joining("\n" +
+"\n" +
+""));
 
         if (schemaContext.isEmpty()) {
-            return Map.of("answer", "Xin l?i, tôi không tìm th?y d? li?u phù h?p d? tr? l?i câu h?i c?a b?n.");
+            return Map.of("answer", "Xin l?i, tï¿½i khï¿½ng tï¿½m th?y d? li?u phï¿½ h?p d? tr? l?i cï¿½u h?i c?a b?n.");
         }
 
         // Stage 2: SQL Generation
         String sqlPrompt = String.format(
-                "D?a vào schema CSDL PostgreSQL sau:
-%s
-
-" +
-                "Hãy vi?t M?T câu l?nh SQL SELECT duy nh?t d? tr? l?i câu h?i c?a ngu?i dùng: '%s'.
-" +
-                "LUU Ý QUAN TR?NG: Ch? tr? v? câu l?nh SQL thô, không dùng code block, không gi?i thích.",
+                "D?a vï¿½o schema CSDL PostgreSQL sau:\n" +
+"%s\n" +
+"\n" +
+"" +
+                "Hï¿½y vi?t M?T cï¿½u l?nh SQL SELECT duy nh?t d? tr? l?i cï¿½u h?i c?a ngu?i dï¿½ng: '%s'.\n" +
+"" +
+                "LUU ï¿½ QUAN TR?NG: Ch? tr? v? cï¿½u l?nh SQL thï¿½, khï¿½ng dï¿½ng code block, khï¿½ng gi?i thï¿½ch.",
                 schemaContext, userQuestion);
         
         String rawSql = chatModel.call(sqlPrompt).trim();
@@ -83,12 +83,12 @@ public class ChatbotService {
 
         // Stage 3: Execution & Security Validation
         if (!rawSql.toUpperCase().startsWith("SELECT")) {
-            throw new CustomException("L?nh SQL sinh ra không h?p l? (Không ph?i l?nh SELECT).", HttpStatus.BAD_REQUEST);
+            throw new CustomException("L?nh SQL sinh ra khï¿½ng h?p l? (Khï¿½ng ph?i l?nh SELECT).", HttpStatus.BAD_REQUEST);
         }
         String upperSql = rawSql.toUpperCase();
         if (upperSql.contains("INSERT ") || upperSql.contains("UPDATE ") || upperSql.contains("DELETE ") 
                 || upperSql.contains("DROP ") || upperSql.contains("ALTER ")) {
-            throw new CustomException("Phát hi?n l?nh SQL nguy hi?m!", HttpStatus.FORBIDDEN);
+            throw new CustomException("Phï¿½t hi?n l?nh SQL nguy hi?m!", HttpStatus.FORBIDDEN);
         }
 
         String dbResultJson = "[]";
@@ -98,19 +98,19 @@ public class ChatbotService {
             log.info("Stage 3 - Execution Result: {}", dbResultJson);
         } catch (Exception e) {
             log.error("L?i khi ch?y SQL: {}", e.getMessage());
-            return Map.of("answer", "R?t ti?c, tôi không th? tra c?u thông tin lúc này. L?i truy v?n Database.");
+            return Map.of("answer", "R?t ti?c, tï¿½i khï¿½ng th? tra c?u thï¿½ng tin lï¿½c nï¿½y. L?i truy v?n Database.");
         }
 
         // Stage 4: NLG (Natural Language Generation)
         String nlgPrompt = String.format(
-                "B?n là m?t nhân viên cham sóc khách hàng thân thi?n c?a hãng xe khách.
-" +
-                "Khách hàng h?i: '%s'
-" +
-                "D? li?u tra c?u du?c t? h? th?ng (d?nh d?ng JSON): %s
-
-" +
-                "D?a vào d? li?u trên, hãy tóm t?t và tr? l?i khách hàng b?ng ti?ng Vi?t m?t cách t? nhiên, l?ch s? và d? hi?u nh?t. N?u JSON r?ng ([]), hãy báo v?i khách là không tìm th?y thông tin.",
+                "B?n lï¿½ m?t nhï¿½n viï¿½n cham sï¿½c khï¿½ch hï¿½ng thï¿½n thi?n c?a hï¿½ng xe khï¿½ch.\n" +
+"" +
+                "Khï¿½ch hï¿½ng h?i: '%s'\n" +
+"" +
+                "D? li?u tra c?u du?c t? h? th?ng (d?nh d?ng JSON): %s\n" +
+"\n" +
+"" +
+                "D?a vï¿½o d? li?u trï¿½n, hï¿½y tï¿½m t?t vï¿½ tr? l?i khï¿½ch hï¿½ng b?ng ti?ng Vi?t m?t cï¿½ch t? nhiï¿½n, l?ch s? vï¿½ d? hi?u nh?t. N?u JSON r?ng ([]), hï¿½y bï¿½o v?i khï¿½ch lï¿½ khï¿½ng tï¿½m th?y thï¿½ng tin.",
                 userQuestion, dbResultJson);
 
         String finalAnswer = chatModel.call(nlgPrompt);

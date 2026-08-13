@@ -30,6 +30,22 @@ services:
     networks:
       - busbooking-network
 
+  backend:
+    build: .
+    container_name: busbooking_backend
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      DB_HOST: postgres_db_local
+      DB_PORT: 5432
+      REDIS_HOST: redis_local
+    depends_on:
+      - postgres_db_local
+      - redis_local
+    networks:
+      - busbooking-network
+
 volumes:
   postgres_data:
 

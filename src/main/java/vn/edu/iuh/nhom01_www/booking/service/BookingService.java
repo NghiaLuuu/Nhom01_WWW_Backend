@@ -8,4 +8,5 @@ import java.util.UUID;
 public interface BookingService {
     Booking createBooking(UUID customerId, Long tripId, List<Long> seatIds);
     void releaseExpiredBookings();
+    List<Booking> getAllBookings();
 }

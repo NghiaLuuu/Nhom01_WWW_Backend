@@ -101,4 +101,9 @@ public class BookingServiceImpl implements BookingService {
         
         bookingRepository.saveAll(expiredBookings);
     }
+
+    @Override
+    public List<Booking> getAllBookings() {
+        return bookingRepository.findAll();
+    }
 }

@@ -2,7 +2,7 @@ spring:
   application:
     name: busbooking
   datasource:
-    url: jdbc:postgresql://localhost:6666/busbooking
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:6666}/busbooking
     username: postgres
     password: postgres
     driver-class-name: org.postgresql.Driver
@@ -17,7 +17,7 @@ spring:
 
   data:
     redis:
-      host: localhost
+      host: ${REDIS_HOST:localhost}
       port: 6379
 
   mail:

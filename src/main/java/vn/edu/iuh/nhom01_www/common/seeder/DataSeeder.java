@@ -7,10 +7,12 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import vn.edu.iuh.nhom01_www.booking.model.Booking;
 import vn.edu.iuh.nhom01_www.booking.repository.BookingRepository;
 import vn.edu.iuh.nhom01_www.cancelrequest.repository.CancelRequestRepository;
 import vn.edu.iuh.nhom01_www.chatbot.model.TableMetadata;
 import vn.edu.iuh.nhom01_www.chatbot.repository.TableMetadataRepository;
+import vn.edu.iuh.nhom01_www.payment.model.Payment;
 import vn.edu.iuh.nhom01_www.payment.repository.PaymentRepository;
 import vn.edu.iuh.nhom01_www.role.model.Permission;
 import vn.edu.iuh.nhom01_www.role.model.Role;
@@ -20,6 +22,7 @@ import vn.edu.iuh.nhom01_www.route.model.Route;
 import vn.edu.iuh.nhom01_www.route.repository.RouteRepository;
 import vn.edu.iuh.nhom01_www.seat.model.Seat;
 import vn.edu.iuh.nhom01_www.seat.repository.SeatRepository;
+import vn.edu.iuh.nhom01_www.ticket.model.Ticket;
 import vn.edu.iuh.nhom01_www.ticket.repository.TicketRepository;
 import vn.edu.iuh.nhom01_www.trip.model.Trip;
 import vn.edu.iuh.nhom01_www.trip.repository.TripRepository;
@@ -34,6 +37,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Component
 @RequiredArgsConstructor
@@ -55,42 +59,33 @@ public class DataSeeder implements CommandLineRunner {
     private final TableMetadataRepository tableMetadataRepository;
     private final PasswordEncoder passwordEncoder;
 
+    private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
     @Override
     @Transactional
     public void run(String... args) throws Exception {
-        log.info("--- BẮT ĐẦU CHẠY SEEDER DỮ LIỆU MẪU ---");
+        log.info("--- BẮT ĐẦU CHẠY SEEDER DỮ LIỆU MẪU LỚN ---");
         clearDatabase();
         seedData();
-        log.info("--- HOÀN TẤT SEEDER DỮ LIỆU MẪU ---");
+        log.info("--- HOÀN TẤT SEEDER DỮ LIỆU MẪU LỚN ---");
     }
 
     private void clearDatabase() {
-        log.info("Đang xóa dữ liệu cũ (Xóa theo thứ tự phụ thuộc khóa ngoại)...");
-        cancelRequestRepository.deleteAll();
-        paymentRepository.deleteAll();
-        ticketRepository.deleteAll();
-        bookingRepository.deleteAll();
-        tripRepository.deleteAll();
-        seatRepository.deleteAll();
-        vehicleRepository.deleteAll();
-        routeRepository.deleteAll();
-        staffRepository.deleteAll();
-        customerRepository.deleteAll();
-        roleRepository.deleteAll();
-        permissionRepository.deleteAll();
-        tableMetadataRepository.deleteAll();
+        log.info("Đang xóa dữ liệu cũ (Sử dụng TRUNCATE CASCADE để tránh lỗi khóa ngoại)...");
+        jdbcTemplate.execute("TRUNCATE TABLE cancel_requests, payments, tickets, bookings, trips, seats, vehicles, routes, staff_permissions, staffs, customers, role_permissions, roles, permissions, table_metadata RESTART IDENTITY CASCADE");
         log.info("Xóa dữ liệu cũ thành công!");
     }
 
     private void seedData() {
         // 1. Permissions & Roles
-        log.info("Đang tạo Permissions và Roles...");
+        log.info("1. Đang tạo Permissions và Roles...");
         Permission pTrip = permissionRepository.save(Permission.builder().code("MANAGE_TRIP").description("Quản lý chuyến xe").build());
         Permission pUser = permissionRepository.save(Permission.builder().code("MANAGE_USER").description("Quản lý người dùng").build());
         Permission pRoute = permissionRepository.save(Permission.builder().code("MANAGE_ROUTE").description("Quản lý tuyến đường").build());
         Permission pTicket = permissionRepository.save(Permission.builder().code("MANAGE_TICKET").description("Quản lý đặt vé").build());
+        Permission pStats = permissionRepository.save(Permission.builder().code("VIEW_STATISTICS").description("Xem thống kê").build());
 
-        Set<Permission> adminPerms = new HashSet<>(Arrays.asList(pTrip, pUser, pRoute, pTicket));
+        Set<Permission> adminPerms = new HashSet<>(Arrays.asList(pTrip, pUser, pRoute, pTicket, pStats));
         Set<Permission> staffPerms = new HashSet<>(Arrays.asList(pTrip, pTicket));
 
         Role roleAdmin = roleRepository.save(Role.builder().name("ROLE_ADMIN").description("Quản trị viên hệ thống").permissions(adminPerms).build());
@@ -98,83 +93,120 @@ public class DataSeeder implements CommandLineRunner {
         Role roleCustomer = roleRepository.save(Role.builder().name("ROLE_CUSTOMER").description("Khách hàng").permissions(new HashSet<>()).build());
 
         // 2. Users
-        log.info("Đang tạo Users...");
+        log.info("2. Đang tạo Users...");
         String defaultPassword = passwordEncoder.encode("password123");
         
-        staffRepository.save(Staff.builder()
-                .fullName("Nguyễn Văn Admin")
-                .email("admin@vexe.vn")
-                .phoneNumber("0901234567")
-                .password(defaultPassword)
-                .status("ACTIVE")
-                .dateOfBirth(LocalDate.of(1990, 1, 1))
-                .staffCode("STAFF001")
-                .role(roleAdmin)
-                .build());
+        staffRepository.save(Staff.builder().fullName("Admin VEXE").email("admin@vexe.vn").phoneNumber("0901234567").password(defaultPassword).status("ACTIVE").dateOfBirth(LocalDate.of(1985, 1, 1)).staffCode("STAFF001").role(roleAdmin).build());
+        staffRepository.save(Staff.builder().fullName("Nguyễn Quản Lý").email("manager@vexe.vn").phoneNumber("0901234568").password(defaultPassword).status("ACTIVE").dateOfBirth(LocalDate.of(1988, 5, 15)).staffCode("STAFF002").role(roleAdmin).build());
+        
+        for (int i = 3; i <= 7; i++) {
+            staffRepository.save(Staff.builder().fullName("Nhân viên " + i).email("staff" + i + "@vexe.vn").phoneNumber("090987654" + i).password(defaultPassword).status("ACTIVE").staffCode("STAFF00" + i).role(roleStaff).build());
+        }
 
-        staffRepository.save(Staff.builder()
-                .fullName("Trần Thị Staff")
-                .email("staff@vexe.vn")
-                .phoneNumber("0909876543")
-                .password(defaultPassword)
-                .status("ACTIVE")
-                .staffCode("STAFF002")
-                .role(roleStaff)
-                .build());
-
-        customerRepository.save(Customer.builder()
-                .fullName("Lê Văn Khách")
-                .email("khach1@gmail.com")
-                .phoneNumber("0912345678")
-                .password(defaultPassword)
-                .status("ACTIVE")
-                .address("Quận 1, TP.HCM")
-                .build());
+        List<Customer> customers = new ArrayList<>();
+        customers.add(customerRepository.save(Customer.builder().fullName("Lê Văn Khách").email("khach1@gmail.com").phoneNumber("0912345678").password(defaultPassword).status("ACTIVE").address("Quận 1, TP.HCM").build()));
+        for (int i = 2; i <= 20; i++) {
+            customers.add(customerRepository.save(Customer.builder().fullName("Khách hàng " + i).email("khach" + i + "@gmail.com").phoneNumber("09123456" + String.format("%02d", i)).password(defaultPassword).status("ACTIVE").address("TP.HCM").build()));
+        }
 
         // 3. Routes
-        log.info("Đang tạo Tuyến đường...");
-        Route route1 = routeRepository.save(Route.builder().departureLocation("TP.HCM").arrivalLocation("Đà Lạt").distanceKm(new BigDecimal("300")).durationMinutes(360).basePrice(new BigDecimal("250000")).status(true).build());
-        Route route2 = routeRepository.save(Route.builder().departureLocation("Hà Nội").arrivalLocation("Sapa").distanceKm(new BigDecimal("315")).durationMinutes(330).basePrice(new BigDecimal("300000")).status(true).build());
-        Route route3 = routeRepository.save(Route.builder().departureLocation("Đà Nẵng").arrivalLocation("Huế").distanceKm(new BigDecimal("100")).durationMinutes(120).basePrice(new BigDecimal("150000")).status(true).build());
-        Route route4 = routeRepository.save(Route.builder().departureLocation("TP.HCM").arrivalLocation("Nha Trang").distanceKm(new BigDecimal("430")).durationMinutes(500).basePrice(new BigDecimal("350000")).status(true).build());
+        log.info("3. Đang tạo Tuyến đường...");
+        List<Route> routes = new ArrayList<>();
+        routes.add(routeRepository.save(Route.builder().departureLocation("TP.HCM").arrivalLocation("Đà Lạt").distanceKm(new BigDecimal("300")).durationMinutes(360).basePrice(new BigDecimal("250000")).status(true).build()));
+        routes.add(routeRepository.save(Route.builder().departureLocation("Hà Nội").arrivalLocation("Sapa").distanceKm(new BigDecimal("315")).durationMinutes(330).basePrice(new BigDecimal("300000")).status(true).build()));
+        routes.add(routeRepository.save(Route.builder().departureLocation("Đà Nẵng").arrivalLocation("Huế").distanceKm(new BigDecimal("100")).durationMinutes(120).basePrice(new BigDecimal("150000")).status(true).build()));
+        routes.add(routeRepository.save(Route.builder().departureLocation("TP.HCM").arrivalLocation("Nha Trang").distanceKm(new BigDecimal("430")).durationMinutes(500).basePrice(new BigDecimal("350000")).status(true).build()));
+        routes.add(routeRepository.save(Route.builder().departureLocation("Hà Nội").arrivalLocation("Hải Phòng").distanceKm(new BigDecimal("120")).durationMinutes(100).basePrice(new BigDecimal("120000")).status(true).build()));
+        routes.add(routeRepository.save(Route.builder().departureLocation("TP.HCM").arrivalLocation("Cần Thơ").distanceKm(new BigDecimal("170")).durationMinutes(200).basePrice(new BigDecimal("160000")).status(true).build()));
+        routes.add(routeRepository.save(Route.builder().departureLocation("Đà Nẵng").arrivalLocation("Quy Nhơn").distanceKm(new BigDecimal("320")).durationMinutes(360).basePrice(new BigDecimal("280000")).status(true).build()));
+        routes.add(routeRepository.save(Route.builder().departureLocation("Đà Lạt").arrivalLocation("Nha Trang").distanceKm(new BigDecimal("140")).durationMinutes(180).basePrice(new BigDecimal("180000")).status(true).build()));
+        routes.add(routeRepository.save(Route.builder().departureLocation("TP.HCM").arrivalLocation("Vũng Tàu").distanceKm(new BigDecimal("100")).durationMinutes(120).basePrice(new BigDecimal("150000")).status(true).build()));
+        routes.add(routeRepository.save(Route.builder().departureLocation("Hà Nội").arrivalLocation("Hạ Long").distanceKm(new BigDecimal("160")).durationMinutes(150).basePrice(new BigDecimal("200000")).status(true).build()));
 
         // 4. Vehicles
-        log.info("Đang tạo Xe...");
-        Vehicle v1 = createVehicle("51B-123.45", "Sleeper", 34);
-        Vehicle v2 = createVehicle("29B-987.65", "Sleeper", 36);
-        Vehicle v3 = createVehicle("49B-555.55", "Limousine", 22);
-        v1 = vehicleRepository.save(v1);
-        v2 = vehicleRepository.save(v2);
-        v3 = vehicleRepository.save(v3);
+        log.info("4. Đang tạo Xe...");
+        List<Vehicle> vehicles = new ArrayList<>();
+        String[] types = {"Sleeper", "Limousine", "Seater"};
+        int[] capacities = {34, 22, 45};
+        for (int i = 1; i <= 20; i++) {
+            int typeIdx = i % 3;
+            String plate = String.format("%02dB-%03d.%02d", 50 + (i%30), 100 + i, i);
+            Vehicle v = createVehicle(plate, types[typeIdx], capacities[typeIdx]);
+            vehicles.add(vehicleRepository.save(v));
+        }
 
         // 5. Trips
-        log.info("Đang tạo Chuyến xe...");
-        LocalDateTime tomorrow = LocalDateTime.now().plusDays(1).withHour(8).withMinute(0).withSecond(0).withNano(0);
+        log.info("5. Đang tạo Chuyến xe...");
+        List<Trip> trips = new ArrayList<>();
+        Random rand = new Random();
+        LocalDateTime baseTime = LocalDateTime.now().minusDays(5).withHour(6).withMinute(0).withSecond(0).withNano(0);
         
-        tripRepository.save(Trip.builder().route(route1).vehicle(v1).departureTime(tomorrow).price(new BigDecimal("250000")).status("PENDING").build());
-        tripRepository.save(Trip.builder().route(route1).vehicle(v3).departureTime(tomorrow.plusHours(4)).price(new BigDecimal("400000")).status("PENDING").build());
-        tripRepository.save(Trip.builder().route(route2).vehicle(v2).departureTime(tomorrow.plusDays(1)).price(new BigDecimal("300000")).status("PENDING").build());
-        tripRepository.save(Trip.builder().route(route4).vehicle(v1).departureTime(tomorrow.plusDays(2)).price(new BigDecimal("350000")).status("PENDING").build());
+        for (int i = 0; i < 50; i++) {
+            Route route = routes.get(rand.nextInt(routes.size()));
+            Vehicle vehicle = vehicles.get(rand.nextInt(vehicles.size()));
+            LocalDateTime deptTime = baseTime.plusDays(rand.nextInt(15)).plusHours(rand.nextInt(16));
+            String status = deptTime.isBefore(LocalDateTime.now()) ? "COMPLETED" : "PENDING";
+            BigDecimal price = route.getBasePrice().multiply(new BigDecimal(vehicle.getType().equals("Limousine") ? "1.5" : "1.0"));
+            
+            trips.add(tripRepository.save(Trip.builder()
+                    .route(route)
+                    .vehicle(vehicle)
+                    .departureTime(deptTime)
+                    .price(price)
+                    .status(status)
+                    .build()));
+        }
 
-        // 6. Chatbot Metadata
-        log.info("Đang tạo Dữ liệu Schema cho Chatbot...");
-        tableMetadataRepository.save(TableMetadata.builder()
-                .tableName("routes")
-                .shortDescription("Chứa thông tin các tuyến đường xe chạy")
-                .schemaDefinition("CREATE TABLE routes (id BIGINT PRIMARY KEY, departure_location VARCHAR(255), arrival_location VARCHAR(255), base_price DECIMAL(38,2), distance_km DECIMAL(38,2), duration_minutes INT);")
-                .build());
-                
-        tableMetadataRepository.save(TableMetadata.builder()
-                .tableName("vehicles")
-                .shortDescription("Chứa thông tin xe và biển số")
-                .schemaDefinition("CREATE TABLE vehicles (id BIGINT PRIMARY KEY, license_plate VARCHAR(255), type VARCHAR(255), capacity INT);")
-                .build());
+        // 6. Bookings, Tickets, Payments
+        log.info("6. Đang tạo Dữ liệu Đặt vé...");
+        for (int i = 0; i < 150; i++) {
+            Customer customer = customers.get(rand.nextInt(customers.size()));
+            Trip trip = trips.get(rand.nextInt(trips.size()));
+            
+            List<Seat> availableSeats = trip.getVehicle().getSeats();
+            int numSeats = rand.nextInt(3) + 1; // 1-3 seats
+            List<Seat> bookedSeats = new ArrayList<>();
+            for(int j=0; j<numSeats; j++) {
+                bookedSeats.add(availableSeats.get(rand.nextInt(availableSeats.size()))); // Might duplicate but it's mock
+            }
+            
+            BigDecimal total = trip.getPrice().multiply(new BigDecimal(numSeats));
+            boolean isPaid = rand.nextBoolean() || trip.getStatus().equals("COMPLETED");
+            String status = isPaid ? "PAID" : (rand.nextBoolean() ? "CANCELLED" : "PENDING_PAYMENT");
 
-        tableMetadataRepository.save(TableMetadata.builder()
-                .tableName("trips")
-                .shortDescription("Chứa thông tin các chuyến xe đang và sắp chạy")
-                .schemaDefinition("CREATE TABLE trips (id BIGINT PRIMARY KEY, route_id BIGINT, vehicle_id BIGINT, departure_time TIMESTAMP, price DECIMAL(38,2), status VARCHAR(255));")
-                .build());
+            Booking booking = bookingRepository.save(Booking.builder()
+                    .customer(customer)
+                    .trip(trip)
+                    .status(status)
+                    .totalPrice(total)
+                    .holdExpiresAt(LocalDateTime.now().plusMinutes(15))
+                    .build());
+
+            if (isPaid) {
+                paymentRepository.save(Payment.builder()
+                        .booking(booking)
+                        .amount(total)
+                        .paymentMethod(rand.nextBoolean() ? "VNPAY" : "MOMO")
+                        .status("SUCCESS")
+                        .transactionId(UUID.randomUUID().toString())
+                        .build());
+            }
+
+            for (Seat seat : bookedSeats) {
+                ticketRepository.save(Ticket.builder()
+                        .booking(booking)
+                        .seat(seat)
+                        .status(isPaid ? "ISSUED" : "RESERVED")
+                        .price(trip.getPrice())
+                        .build());
+            }
+        }
+
+        // 7. Chatbot Metadata
+        log.info("7. Đang tạo Dữ liệu Schema cho Chatbot...");
+        tableMetadataRepository.save(TableMetadata.builder().tableName("routes").shortDescription("Chứa thông tin các tuyến đường xe chạy").schemaDefinition("CREATE TABLE routes (id BIGINT PRIMARY KEY, departure_location VARCHAR(255), arrival_location VARCHAR(255), base_price DECIMAL(38,2), distance_km DECIMAL(38,2), duration_minutes INT);").build());
+        tableMetadataRepository.save(TableMetadata.builder().tableName("vehicles").shortDescription("Chứa thông tin xe và biển số").schemaDefinition("CREATE TABLE vehicles (id BIGINT PRIMARY KEY, license_plate VARCHAR(255), type VARCHAR(255), capacity INT);").build());
+        tableMetadataRepository.save(TableMetadata.builder().tableName("trips").shortDescription("Chứa thông tin các chuyến xe đang và sắp chạy").schemaDefinition("CREATE TABLE trips (id BIGINT PRIMARY KEY, route_id BIGINT, vehicle_id BIGINT, departure_time TIMESTAMP, price DECIMAL(38,2), status VARCHAR(255));").build());
     }
 
     private Vehicle createVehicle(String licensePlate, String type, int capacity) {
@@ -188,7 +220,7 @@ public class DataSeeder implements CommandLineRunner {
         List<Seat> seats = new ArrayList<>();
         for (int i = 1; i <= capacity; i++) {
             String seatName = (i <= capacity / 2 ? "A" : "B") + (i <= capacity / 2 ? i : (i - capacity / 2));
-            seats.add(Seat.builder().seatName(seatName).status("AVAILABLE").vehicle(vehicle).build());
+            seats.add(Seat.builder().seatName(seatName).vehicle(vehicle).build());
         }
         vehicle.setSeats(seats);
         return vehicle;

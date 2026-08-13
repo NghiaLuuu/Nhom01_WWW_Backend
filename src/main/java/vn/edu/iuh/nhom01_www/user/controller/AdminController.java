@@ -21,6 +21,8 @@ public class AdminController {
 
     private final UserService userService;
 
+    private final vn.edu.iuh.nhom01_www.booking.service.BookingService bookingService;
+
     @GetMapping("/staffs")
     @PreAuthorize("hasAuthority('STAFF_MANAGE')")
     public ResponseEntity<ApiResponse<List<Staff>>> getAllStaffs() {
@@ -61,5 +63,11 @@ public class AdminController {
     @PreAuthorize("hasAuthority('VIEW_STATISTICS')")
     public ResponseEntity<ApiResponse<Object>> getRevenueStatistics() {
         return ResponseEntity.ok(new ApiResponse<>(true, "Success", userService.getRevenueStatistics()));
+    }
+
+    @GetMapping("/bookings")
+    @PreAuthorize("hasAuthority('MANAGE_TICKET')")
+    public ResponseEntity<ApiResponse<List<vn.edu.iuh.nhom01_www.booking.model.Booking>>> getAllBookings() {
+        return ResponseEntity.ok(new ApiResponse<>(true, "Success", bookingService.getAllBookings()));
     }
 }
