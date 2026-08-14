@@ -16,6 +16,11 @@ public class ChatbotController {
 
     @PostMapping("/ask")
     public ResponseEntity<ApiResponse<Object>> ask(@RequestBody ChatbotRequest request) {
-        return ResponseEntity.ok(new ApiResponse<>(true, "Success", chatbotService.ask(request)));
+        String currentUserEmail = "ANONYMOUS";
+        org.springframework.security.core.Authentication auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.isAuthenticated() && !auth.getPrincipal().equals("anonymousUser")) {
+            currentUserEmail = auth.getName();
+        }
+        return ResponseEntity.ok(new ApiResponse<>(true, "Success", chatbotService.ask(request, currentUserEmail)));
     }
 }
