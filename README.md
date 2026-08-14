@@ -42,12 +42,14 @@
 
 ## 🚀 Hướng Dẫn Cài Đặt (Environment Setup)
 
-Bạn cần cấu hình các thông số hệ thống trong file `src/main/resources/application.yml` (hoặc `.properties`):
+> **Lưu ý bảo mật:** File `src/main/resources/application.yml` chứa thông tin nhạy cảm (như OpenAI API Key, mật khẩu DB) nên đã được đưa vào `.gitignore` để không bị push lên GitHub. Bạn cần tự tạo file `application.yml` này tại local của mình theo mẫu sau:
+
+Bạn cần cấu hình các thông số hệ thống trong file `src/main/resources/application.yml`:
 
 ```yaml
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/vexe_db
+    url: jdbc:postgresql://localhost:6666/busbooking
     username: <your_db_username>
     password: <your_db_password>
   
@@ -77,14 +79,14 @@ jwt:
 
 **1. Tạo database trong PostgreSQL:**
 ```sql
-CREATE DATABASE vexe_db;
+CREATE DATABASE busbooking;
 ```
 
 **2. Chạy ứng dụng bằng Maven:**
 Mở terminal tại thư mục gốc của project (chứa file `pom.xml`):
 ```bash
 # Đối với Windows:
-./mvnw.cmd spring-boot:run
+.\mvnw spring-boot:run
 
 # Đối với MacOS/Linux:
 ./mvnw spring-boot:run
@@ -94,9 +96,18 @@ Hệ thống sẽ tự động khởi động tại: `http://localhost:8080`
 
 ---
 
-## 🧪 Tài Khoản Test (Data Seeder)
+## 🧪 Tạo Dữ Liệu Mẫu (Data Seeder) & Khắc Phục Lỗi
 
-Khi ứng dụng vừa khởi chạy, hệ thống sẽ tự động quét và chạy `DataSeeder.java` để reset database và tạo dữ liệu mẫu chuẩn bị sẵn cho việc demo. Các tài khoản test có sẵn:
+Hệ thống cung cấp sẵn cơ chế `DataSeeder` để reset database và tự động sinh dữ liệu mẫu (Role, Permission khớp chuẩn `@PreAuthorize`, Tài khoản, Chuyến xe, v.v.).
+**Lưu ý quan trọng:** Seeder đã được cấu hình **KHÔNG tự động chạy** khi khởi động Backend (để tránh vô tình xóa mất dữ liệu đang làm việc).
+
+**Để chạy Seeder (Reset toàn bộ DB), mở terminal mới và chạy:**
+```bash
+.\mvnw spring-boot:run "-Dspring-boot.run.arguments=--seed"
+```
+*(Sau khi thấy log báo thành công, bạn nhấn `Ctrl + C` để thoát)*
+
+**Các tài khoản test có sẵn sau khi seed:**
 
 | Quyền hạn | Email | Mật khẩu |
 | :--- | :--- | :--- |
