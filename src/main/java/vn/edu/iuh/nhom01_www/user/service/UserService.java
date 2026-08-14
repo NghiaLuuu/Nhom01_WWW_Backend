@@ -28,6 +28,7 @@ public interface UserService {
 
     List<Customer> getAllCustomers();
     Customer updateCustomerStatus(UUID id, String status);
+    Customer resetCustomerPassword(UUID id);
 
     Object getProfile(String email);
     Object updatePassword(String email, vn.edu.iuh.nhom01_www.user.dto.UpdatePasswordRequest request);

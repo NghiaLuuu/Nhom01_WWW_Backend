@@ -65,6 +65,12 @@ public class AdminController {
         return ResponseEntity.ok(new ApiResponse<>(true, "Customer status updated", userService.updateCustomerStatus(id, statusBody.get("status"))));
     }
 
+    @PatchMapping("/customers/{id}/reset-password")
+    @PreAuthorize("hasAuthority('CUSTOMER_MANAGE')")
+    public ResponseEntity<ApiResponse<Customer>> resetCustomerPassword(@PathVariable UUID id) {
+        return ResponseEntity.ok(new ApiResponse<>(true, "Customer password reset to default (123456)", userService.resetCustomerPassword(id)));
+    }
+
     @GetMapping("/statistics/revenue")
     @PreAuthorize("hasAuthority('VIEW_STATISTICS')")
     public ResponseEntity<ApiResponse<Object>> getRevenueStatistics() {

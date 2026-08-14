@@ -60,11 +60,16 @@ public class UserServiceImpl implements UserService {
         Role role = roleRepository.findById(request.getRoleId())
                 .orElseThrow(() -> new CustomException("Role not found", HttpStatus.NOT_FOUND));
 
+        String staffCode = request.getStaffCode();
+        if (staffCode == null || staffCode.trim().isEmpty()) {
+            staffCode = "NV" + (System.currentTimeMillis() % 100000);
+        }
+
         Staff staff = Staff.builder()
                 .email(request.getEmail())
                 .fullName(request.getFullName())
                 .password(passwordEncoder.encode("Vexe@123"))
-                .staffCode(request.getStaffCode())
+                .staffCode(staffCode)
                 .position(request.getPosition())
                 .workStation(request.getWorkStation())
                 .role(role)
@@ -125,6 +130,15 @@ public class UserServiceImpl implements UserService {
         Customer customer = customerRepository.findById(id)
                 .orElseThrow(() -> new CustomException("Customer not found", HttpStatus.NOT_FOUND));
         customer.setStatus(status);
+        return customerRepository.save(customer);
+    }
+
+    @Override
+    @Transactional
+    public Customer resetCustomerPassword(UUID id) {
+        Customer customer = customerRepository.findById(id)
+                .orElseThrow(() -> new CustomException("Customer not found", HttpStatus.NOT_FOUND));
+        customer.setPassword(passwordEncoder.encode("123456"));
         return customerRepository.save(customer);
     }
 
