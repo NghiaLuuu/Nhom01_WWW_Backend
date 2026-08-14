@@ -1,8 +1,8 @@
 package vn.edu.iuh.nhom01_www.common.service;
 
 import lombok.RequiredArgsConstructor;
-import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -14,12 +14,14 @@ public class EmailService {
 
     @Async
     public void sendOtpEmail(String toEmail, String otp) {
-        SimpleMailMessage message = new SimpleMailMessage();
-        message.setTo(toEmail);
-        message.setSubject("M� x�c th?c OTP - �ang k� t�i kho?n");
-        message.setText("Ch�o b?n,\n\nM� x�c th?c OTP c?a b?n l�: " + otp + "\n\nM� n�y s? h?t h?n trong 5 ph�t.\n\nTr�n tr?ng,\n�?i ngu h? tr?.");
-        
         try {
+            var message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+            
+            helper.setTo(toEmail);
+            helper.setSubject("Mã xác thực OTP - Đăng ký tài khoản");
+            helper.setText("Chào bạn,\n\nMã xác thực OTP của bạn là: " + otp + "\n\nMã này sẽ hết hạn trong 5 phút.\n\nTrân trọng,\nĐội ngũ hỗ trợ.");
+            
             mailSender.send(message);
         } catch (Exception e) {
             // Log error
