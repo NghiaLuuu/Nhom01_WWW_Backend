@@ -50,14 +50,12 @@ public class AuthServiceImpl implements AuthService {
             throw new CustomException("Email is already in use", HttpStatus.BAD_REQUEST);
         }
         
-        if (existing == null) {
-            existing = Customer.builder()
-                    .email(request.getEmail())
-                    .password(passwordEncoder.encode(request.getPassword()))
-                    .fullName(request.getFullName())
-                    .status("PENDING_VERIFICATION")
-                    .build();
-            customerRepository.save(existing);
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            String requestJson = mapper.writeValueAsString(request);
+            redisTemplate.opsForValue().set("REG_DATA:" + request.getEmail(), requestJson, Duration.ofMinutes(5));
+        } catch (Exception e) {
+            throw new CustomException("Error processing registration data", HttpStatus.INTERNAL_SERVER_ERROR);
         }
 
         String otp = String.format("%06d", new Random().nextInt(999999));
@@ -77,14 +75,43 @@ public class AuthServiceImpl implements AuthService {
             throw new CustomException("Invalid OTP", HttpStatus.BAD_REQUEST);
         }
 
-        Customer customer = customerRepository.findByEmail(request.getEmail());
-        if (customer != null) {
-            customer.setStatus("ACTIVE");
-            customerRepository.save(customer);
-            redisTemplate.delete("OTP:" + request.getEmail());
-            return "Account verified successfully";
+        String storedRegData = redisTemplate.opsForValue().get("REG_DATA:" + request.getEmail());
+        if (storedRegData != null) {
+            try {
+                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                RegisterRequest regRequest = mapper.readValue(storedRegData, RegisterRequest.class);
+                Customer customer = customerRepository.findByEmail(request.getEmail());
+                if (customer == null) {
+                    customer = Customer.builder()
+                            .email(regRequest.getEmail())
+                            .password(passwordEncoder.encode(regRequest.getPassword()))
+                            .fullName(regRequest.getFullName())
+                            .status("ACTIVE")
+                            .build();
+                    customerRepository.save(customer);
+                } else if ("PENDING_VERIFICATION".equals(customer.getStatus())) {
+                     customer.setStatus("ACTIVE");
+                     customer.setFullName(regRequest.getFullName());
+                     customer.setPassword(passwordEncoder.encode(regRequest.getPassword()));
+                     customerRepository.save(customer);
+                }
+                
+                redisTemplate.delete("OTP:" + request.getEmail());
+                redisTemplate.delete("REG_DATA:" + request.getEmail());
+                return "Account verified successfully";
+            } catch (Exception e) {
+                throw new CustomException("Error verifying registration data", HttpStatus.INTERNAL_SERVER_ERROR);
+            }
+        } else {
+             Customer customer = customerRepository.findByEmail(request.getEmail());
+             if (customer != null && "PENDING_VERIFICATION".equals(customer.getStatus())) {
+                 customer.setStatus("ACTIVE");
+                 customerRepository.save(customer);
+                 redisTemplate.delete("OTP:" + request.getEmail());
+                 return "Account verified successfully";
+             }
+             throw new CustomException("Registration data expired or not found", HttpStatus.BAD_REQUEST);
         }
-        throw new CustomException("User not found", HttpStatus.NOT_FOUND);
     }
 
     @Override
