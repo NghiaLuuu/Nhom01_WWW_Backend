@@ -24,9 +24,13 @@ public interface UserService {
     Staff createStaff(StaffRequest request);
     Staff updateStaff(UUID id, StaffRequest request);
     Staff updateStaffStatus(UUID id, String status);
+    Staff resetStaffPassword(UUID id);
 
     List<Customer> getAllCustomers();
     Customer updateCustomerStatus(UUID id, String status);
+
+    Object getProfile(String email);
+    Object updatePassword(String email, vn.edu.iuh.nhom01_www.user.dto.UpdatePasswordRequest request);
 
     Object getRevenueStatistics();
 

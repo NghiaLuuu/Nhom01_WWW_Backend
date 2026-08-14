@@ -11,4 +11,6 @@ public interface AuthService {
     Object verifyOtp(VerifyOtpRequest request);
     JwtResponse login(LoginRequest request);
     JwtResponse refreshToken(TokenRefreshRequest request);
+    Object forgotPassword(vn.edu.iuh.nhom01_www.user.dto.ForgotPasswordRequest request);
+    Object resetPassword(vn.edu.iuh.nhom01_www.user.dto.ResetPasswordRequest request);
 }

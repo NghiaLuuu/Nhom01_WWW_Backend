@@ -63,7 +63,7 @@ public class UserServiceImpl implements UserService {
         Staff staff = Staff.builder()
                 .email(request.getEmail())
                 .fullName(request.getFullName())
-                .password(passwordEncoder.encode(request.getPassword()))
+                .password(passwordEncoder.encode("Vexe@123"))
                 .staffCode(request.getStaffCode())
                 .position(request.getPosition())
                 .workStation(request.getWorkStation())
@@ -106,6 +106,15 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    @Transactional
+    public Staff resetStaffPassword(UUID id) {
+        Staff staff = staffRepository.findById(id)
+                .orElseThrow(() -> new CustomException("Staff not found", HttpStatus.NOT_FOUND));
+        staff.setPassword(passwordEncoder.encode("Vexe@123"));
+        return staffRepository.save(staff);
+    }
+
+    @Override
     public List<Customer> getAllCustomers() {
         return customerRepository.findAll();
     }
@@ -117,6 +126,39 @@ public class UserServiceImpl implements UserService {
                 .orElseThrow(() -> new CustomException("Customer not found", HttpStatus.NOT_FOUND));
         customer.setStatus(status);
         return customerRepository.save(customer);
+    }
+
+    @Override
+    public Object getProfile(String email) {
+        Customer customer = customerRepository.findByEmail(email);
+        if (customer != null) return customer;
+        Staff staff = staffRepository.findByEmail(email);
+        if (staff != null) return staff;
+        throw new CustomException("Profile not found", HttpStatus.NOT_FOUND);
+    }
+
+    @Override
+    @Transactional
+    public Object updatePassword(String email, vn.edu.iuh.nhom01_www.user.dto.UpdatePasswordRequest request) {
+        Customer customer = customerRepository.findByEmail(email);
+        if (customer != null) {
+            if (!passwordEncoder.matches(request.getOldPassword(), customer.getPassword())) {
+                throw new CustomException("Old password does not match", HttpStatus.BAD_REQUEST);
+            }
+            customer.setPassword(passwordEncoder.encode(request.getNewPassword()));
+            return customerRepository.save(customer);
+        }
+
+        Staff staff = staffRepository.findByEmail(email);
+        if (staff != null) {
+            if (!passwordEncoder.matches(request.getOldPassword(), staff.getPassword())) {
+                throw new CustomException("Old password does not match", HttpStatus.BAD_REQUEST);
+            }
+            staff.setPassword(passwordEncoder.encode(request.getNewPassword()));
+            return staffRepository.save(staff);
+        }
+
+        throw new CustomException("User not found", HttpStatus.NOT_FOUND);
     }
 
     @Override

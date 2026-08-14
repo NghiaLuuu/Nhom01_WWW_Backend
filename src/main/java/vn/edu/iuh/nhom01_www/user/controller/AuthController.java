@@ -42,4 +42,15 @@ public class AuthController {
         JwtResponse response = authService.refreshToken(request);
         return ResponseEntity.ok(new ApiResponse<>(true, "Token refreshed successfully", response));
     }
+    @PostMapping("/forgot-password")
+    public ResponseEntity<ApiResponse<Object>> forgotPassword(@Valid @RequestBody vn.edu.iuh.nhom01_www.user.dto.ForgotPasswordRequest request) {
+        Object response = authService.forgotPassword(request);
+        return ResponseEntity.ok(new ApiResponse<>(true, "Password reset initiated", response));
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<ApiResponse<Object>> resetPassword(@Valid @RequestBody vn.edu.iuh.nhom01_www.user.dto.ResetPasswordRequest request) {
+        Object response = authService.resetPassword(request);
+        return ResponseEntity.ok(new ApiResponse<>(true, "Password reset successful", response));
+    }
 }

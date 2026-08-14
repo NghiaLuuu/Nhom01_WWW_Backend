@@ -20,6 +20,8 @@ import vn.edu.iuh.nhom01_www.user.dto.TokenRefreshRequest;
 import vn.edu.iuh.nhom01_www.user.dto.VerifyOtpRequest;
 import vn.edu.iuh.nhom01_www.user.model.Customer;
 import vn.edu.iuh.nhom01_www.user.repository.CustomerRepository;
+import vn.edu.iuh.nhom01_www.user.model.Staff;
+import vn.edu.iuh.nhom01_www.user.repository.StaffRepository;
 import vn.edu.iuh.nhom01_www.user.service.AuthService;
 import vn.edu.iuh.nhom01_www.common.exception.CustomException;
 import org.springframework.http.HttpStatus;
@@ -34,6 +36,7 @@ public class AuthServiceImpl implements AuthService {
     private final AuthenticationManager authenticationManager;
     private final JwtUtils jwtUtils;
     private final CustomerRepository customerRepository;
+    private final StaffRepository staffRepository;
     private final PasswordEncoder passwordEncoder;
     private final StringRedisTemplate redisTemplate;
     private final EmailService emailService;
@@ -132,5 +135,49 @@ public class AuthServiceImpl implements AuthService {
                             .build();
                 })
                 .orElseThrow(() -> new CustomException("Refresh token is not in database!", HttpStatus.FORBIDDEN));
+    }
+
+    @Override
+    public Object forgotPassword(vn.edu.iuh.nhom01_www.user.dto.ForgotPasswordRequest request) {
+        Customer customer = customerRepository.findByEmail(request.getEmail());
+        Staff staff = staffRepository.findByEmail(request.getEmail());
+
+        if (customer == null && staff == null) {
+            throw new CustomException("User with this email not found", HttpStatus.NOT_FOUND);
+        }
+
+        String otp = String.format("%06d", new Random().nextInt(999999));
+        redisTemplate.opsForValue().set("PWD_OTP:" + request.getEmail(), otp, Duration.ofMinutes(5));
+        emailService.sendOtpEmail(request.getEmail(), otp);
+
+        return "Password reset OTP sent to your email.";
+    }
+
+    @Override
+    public Object resetPassword(vn.edu.iuh.nhom01_www.user.dto.ResetPasswordRequest request) {
+        String storedOtp = redisTemplate.opsForValue().get("PWD_OTP:" + request.getEmail());
+        if (storedOtp == null) {
+            throw new CustomException("OTP expired or not found", HttpStatus.BAD_REQUEST);
+        }
+        if (!storedOtp.equals(request.getOtp())) {
+            throw new CustomException("Invalid OTP", HttpStatus.BAD_REQUEST);
+        }
+
+        Customer customer = customerRepository.findByEmail(request.getEmail());
+        if (customer != null) {
+            customer.setPassword(passwordEncoder.encode(request.getNewPassword()));
+            customerRepository.save(customer);
+        } else {
+            Staff staff = staffRepository.findByEmail(request.getEmail());
+            if (staff != null) {
+                staff.setPassword(passwordEncoder.encode(request.getNewPassword()));
+                staffRepository.save(staff);
+            } else {
+                throw new CustomException("User not found", HttpStatus.NOT_FOUND);
+            }
+        }
+
+        redisTemplate.delete("PWD_OTP:" + request.getEmail());
+        return "Password reset successfully";
     }
 }
