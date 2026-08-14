@@ -5,6 +5,7 @@ import vn.edu.iuh.nhom01_www.trip.model.Trip;
 import vn.edu.iuh.nhom01_www.trip.dto.TripRequest;
 
 public interface TripService {
+    List<Trip> getAllTrips();
     List<Trip> searchTrips(String departureLocation, String arrivalLocation, String date);
     Trip getTripById(Long id);
     Trip createTrip(TripRequest req);

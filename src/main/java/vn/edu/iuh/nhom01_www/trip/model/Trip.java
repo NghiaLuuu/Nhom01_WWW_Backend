@@ -1,5 +1,6 @@
 package vn.edu.iuh.nhom01_www.trip.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
 import vn.edu.iuh.nhom01_www.booking.model.Booking;
@@ -39,6 +40,7 @@ public class Trip {
     @Column(nullable = false)
     private String status;
 
+    @JsonIgnore
     @ToString.Exclude
     @EqualsAndHashCode.Exclude
     @OneToMany(mappedBy = "trip")

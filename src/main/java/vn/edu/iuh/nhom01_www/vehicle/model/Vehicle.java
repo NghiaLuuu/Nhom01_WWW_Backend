@@ -1,5 +1,6 @@
 package vn.edu.iuh.nhom01_www.vehicle.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
 import vn.edu.iuh.nhom01_www.seat.model.Seat;
@@ -28,11 +29,13 @@ public class Vehicle {
 
     private String status;
 
+    @JsonIgnore
     @ToString.Exclude
     @EqualsAndHashCode.Exclude
     @OneToMany(mappedBy = "vehicle", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Seat> seats;
 
+    @JsonIgnore
     @ToString.Exclude
     @EqualsAndHashCode.Exclude
     @OneToMany(mappedBy = "vehicle")

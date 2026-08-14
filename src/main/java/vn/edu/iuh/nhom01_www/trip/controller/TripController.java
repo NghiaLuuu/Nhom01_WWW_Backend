@@ -20,6 +20,12 @@ public class TripController {
 
     private final TripService tripService;
 
+    @GetMapping
+    @PreAuthorize("hasAuthority('TRIP_MANAGE')")
+    public ResponseEntity<ApiResponse<List<Trip>>> getAllTrips() {
+        return ResponseEntity.ok(new ApiResponse<>(true, "Success", tripService.getAllTrips()));
+    }
+
     @GetMapping("/search")
     public ResponseEntity<ApiResponse<List<Trip>>> searchTrips(
             @RequestParam String departureLocation,

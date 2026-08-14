@@ -35,8 +35,20 @@ public class TripServiceImpl implements TripService {
     }
 
     @Override
+    public List<Trip> getAllTrips() {
+        return tripRepository.findAll();
+    }
+
+    @Override
     public List<Trip> searchTrips(String departureLocation, String arrivalLocation, String date) {
-        return java.util.Collections.emptyList();
+        // If all parameters are empty, return all trips
+        if ((departureLocation == null || departureLocation.isBlank())
+                && (arrivalLocation == null || arrivalLocation.isBlank())
+                && (date == null || date.isBlank())) {
+            return tripRepository.findAll();
+        }
+        // TODO: Implement filtered search query
+        return tripRepository.findAll();
     }
 
     @Override

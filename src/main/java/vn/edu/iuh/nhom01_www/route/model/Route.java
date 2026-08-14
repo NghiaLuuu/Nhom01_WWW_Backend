@@ -1,5 +1,6 @@
 package vn.edu.iuh.nhom01_www.route.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
 import vn.edu.iuh.nhom01_www.trip.model.Trip;
@@ -35,6 +36,7 @@ public class Route {
     @Builder.Default
     private Boolean status = true;
 
+    @JsonIgnore
     @ToString.Exclude
     @EqualsAndHashCode.Exclude
     @OneToMany(mappedBy = "route")
