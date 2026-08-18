@@ -13,7 +13,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import vn.edu.iuh.nhom01_www.booking.model.Booking;
 import vn.edu.iuh.nhom01_www.booking.repository.BookingRepository;
-import vn.edu.iuh.nhom01_www.cancelrequest.repository.CancelRequestRepository;
 import vn.edu.iuh.nhom01_www.chatbot.model.TableMetadata;
 import vn.edu.iuh.nhom01_www.chatbot.repository.TableMetadataRepository;
 import vn.edu.iuh.nhom01_www.payment.model.Payment;
@@ -25,7 +24,6 @@ import vn.edu.iuh.nhom01_www.role.repository.RoleRepository;
 import vn.edu.iuh.nhom01_www.route.model.Route;
 import vn.edu.iuh.nhom01_www.route.repository.RouteRepository;
 import vn.edu.iuh.nhom01_www.seat.model.Seat;
-import vn.edu.iuh.nhom01_www.seat.repository.SeatRepository;
 import vn.edu.iuh.nhom01_www.ticket.model.Ticket;
 import vn.edu.iuh.nhom01_www.ticket.repository.TicketRepository;
 import vn.edu.iuh.nhom01_www.trip.model.Trip;
@@ -41,7 +39,6 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Component
 @RequiredArgsConstructor
@@ -54,12 +51,10 @@ public class DataSeeder implements CommandLineRunner {
     private final CustomerRepository customerRepository;
     private final RouteRepository routeRepository;
     private final VehicleRepository vehicleRepository;
-    private final SeatRepository seatRepository;
     private final TripRepository tripRepository;
     private final BookingRepository bookingRepository;
     private final PaymentRepository paymentRepository;
     private final TicketRepository ticketRepository;
-    private final CancelRequestRepository cancelRequestRepository;
     private final TableMetadataRepository tableMetadataRepository;
     private final PasswordEncoder passwordEncoder;
 
@@ -114,7 +109,7 @@ public class DataSeeder implements CommandLineRunner {
                 .permissions(adminPerms).build());
         Role roleStaff = roleRepository.save(
                 Role.builder().name("ROLE_STAFF").description("Nhân viên quản lý").permissions(staffPerms).build());
-        Role roleCustomer = roleRepository.save(
+        roleRepository.save(
                 Role.builder().name("ROLE_CUSTOMER").description("Khách hàng").permissions(new HashSet<>()).build());
 
         // 2. Users
