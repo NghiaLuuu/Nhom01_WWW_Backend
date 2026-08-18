@@ -57,8 +57,13 @@ public class UserServiceImpl implements UserService {
         if (staffRepository.findByEmail(request.getEmail()) != null) {
             throw new CustomException("Email already in use", HttpStatus.BAD_REQUEST);
         }
-        Role role = roleRepository.findById(request.getRoleId())
-                .orElseThrow(() -> new CustomException("Role not found", HttpStatus.NOT_FOUND));
+        Role role = null;
+        if (request.getRoleId() != null) {
+            role = roleRepository.findById(request.getRoleId()).orElse(null);
+        }
+        if (role == null) {
+            role = roleRepository.findByName("ROLE_STAFF").orElse(null);
+        }
 
         String staffCode = request.getStaffCode();
         if (staffCode == null || staffCode.trim().isEmpty()) {
@@ -73,6 +78,7 @@ public class UserServiceImpl implements UserService {
                 .position(request.getPosition())
                 .workStation(request.getWorkStation())
                 .role(role)
+                .permissions(request.getPermissions() != null ? request.getPermissions() : new java.util.ArrayList<>())
                 .hireDate(LocalDate.now())
                 .status("ACTIVE")
                 .build();
@@ -96,6 +102,9 @@ public class UserServiceImpl implements UserService {
         if (request.getWorkStation() != null) staff.setWorkStation(request.getWorkStation());
         if (request.getPassword() != null && !request.getPassword().isEmpty()) {
             staff.setPassword(passwordEncoder.encode(request.getPassword()));
+        }
+        if (request.getPermissions() != null) {
+            staff.setPermissions(request.getPermissions());
         }
         
         return staffRepository.save(staff);
@@ -148,6 +157,29 @@ public class UserServiceImpl implements UserService {
         if (customer != null) return customer;
         Staff staff = staffRepository.findByEmail(email);
         if (staff != null) return staff;
+        throw new CustomException("Profile not found", HttpStatus.NOT_FOUND);
+    }
+
+    @Override
+    @Transactional
+    public Object updateProfile(String email, vn.edu.iuh.nhom01_www.user.dto.UpdateProfileRequest request) {
+        Customer customer = customerRepository.findByEmail(email);
+        if (customer != null) {
+            if (request.getFullName() != null && !request.getFullName().isBlank()) customer.setFullName(request.getFullName());
+            if (request.getPhoneNumber() != null) customer.setPhoneNumber(request.getPhoneNumber());
+            if (request.getDateOfBirth() != null) customer.setDateOfBirth(request.getDateOfBirth());
+            if (request.getAddress() != null) customer.setAddress(request.getAddress());
+            return customerRepository.save(customer);
+        }
+
+        Staff staff = staffRepository.findByEmail(email);
+        if (staff != null) {
+            if (request.getFullName() != null && !request.getFullName().isBlank()) staff.setFullName(request.getFullName());
+            if (request.getPhoneNumber() != null) staff.setPhoneNumber(request.getPhoneNumber());
+            if (request.getDateOfBirth() != null) staff.setDateOfBirth(request.getDateOfBirth());
+            return staffRepository.save(staff);
+        }
+
         throw new CustomException("Profile not found", HttpStatus.NOT_FOUND);
     }
 

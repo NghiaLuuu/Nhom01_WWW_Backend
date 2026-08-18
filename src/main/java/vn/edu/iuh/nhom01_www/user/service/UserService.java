@@ -31,6 +31,7 @@ public interface UserService {
     Customer resetCustomerPassword(UUID id);
 
     Object getProfile(String email);
+    Object updateProfile(String email, vn.edu.iuh.nhom01_www.user.dto.UpdateProfileRequest request);
     Object updatePassword(String email, vn.edu.iuh.nhom01_www.user.dto.UpdatePasswordRequest request);
 
     Object getRevenueStatistics();

@@ -24,6 +24,13 @@ public class UserController {
         return ResponseEntity.ok(new ApiResponse<>(true, "Success", userService.getProfile(email)));
     }
 
+    @PutMapping("/profile")
+    public ResponseEntity<ApiResponse<Object>> updateProfile(@Valid @RequestBody vn.edu.iuh.nhom01_www.user.dto.UpdateProfileRequest request) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        String email = authentication.getName();
+        return ResponseEntity.ok(new ApiResponse<>(true, "Profile updated successfully", userService.updateProfile(email, request)));
+    }
+
     @PutMapping("/password")
     public ResponseEntity<ApiResponse<Object>> updatePassword(@Valid @RequestBody UpdatePasswordRequest request) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();

@@ -11,4 +11,5 @@ public class StaffRequest {
     private String position;
     private String workStation;
     private Long roleId;
+    private java.util.List<String> permissions;
 }
