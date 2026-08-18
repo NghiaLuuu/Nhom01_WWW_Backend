@@ -21,7 +21,7 @@ public class JwtUtils {
 
     public String generateToken(UserDetails userDetails) {
         java.util.List<String> roles = userDetails.getAuthorities().stream()
-                .map(org.springframework.security.core.GrantedAuthority::getAuthority)
+                .map(authority -> authority.getAuthority())
                 .collect(java.util.stream.Collectors.toList());
 
         return Jwts.builder()

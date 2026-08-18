@@ -10,7 +10,6 @@ import vn.edu.iuh.nhom01_www.user.dto.LoginRequest;
 import vn.edu.iuh.nhom01_www.user.dto.RegisterRequest;
 import vn.edu.iuh.nhom01_www.user.dto.TokenRefreshRequest;
 import vn.edu.iuh.nhom01_www.user.dto.VerifyOtpRequest;
-import vn.edu.iuh.nhom01_www.user.dto.VerifyOtpRequest;
 import vn.edu.iuh.nhom01_www.user.service.AuthService;
 import vn.edu.iuh.nhom01_www.common.audit.annotation.Auditable;
 

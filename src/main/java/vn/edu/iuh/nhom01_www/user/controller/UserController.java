@@ -8,7 +8,6 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import vn.edu.iuh.nhom01_www.common.dto.ApiResponse;
 import vn.edu.iuh.nhom01_www.user.dto.UpdatePasswordRequest;
-import vn.edu.iuh.nhom01_www.user.dto.UpdatePasswordRequest;
 import vn.edu.iuh.nhom01_www.user.service.UserService;
 import vn.edu.iuh.nhom01_www.common.audit.annotation.Auditable;
 
