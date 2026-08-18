@@ -6,6 +6,7 @@ import org.springframework.web.bind.annotation.*;
 import vn.edu.iuh.nhom01_www.common.dto.ApiResponse;
 import vn.edu.iuh.nhom01_www.chatbot.dto.ChatbotRequest;
 import vn.edu.iuh.nhom01_www.chatbot.service.ChatbotService;
+import vn.edu.iuh.nhom01_www.common.audit.annotation.Auditable;
 
 @RestController
 @RequestMapping("/api/chatbot")
@@ -15,6 +16,7 @@ public class ChatbotController {
     private final ChatbotService chatbotService;
 
     @PostMapping("/ask")
+    @Auditable(action = "CHATBOT_ASK", entityName = "Chatbot")
     public ResponseEntity<ApiResponse<Object>> ask(@RequestBody ChatbotRequest request) {
         String currentUserEmail = "ANONYMOUS";
         org.springframework.security.core.Authentication auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();

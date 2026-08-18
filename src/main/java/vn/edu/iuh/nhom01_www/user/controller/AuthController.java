@@ -10,7 +10,9 @@ import vn.edu.iuh.nhom01_www.user.dto.LoginRequest;
 import vn.edu.iuh.nhom01_www.user.dto.RegisterRequest;
 import vn.edu.iuh.nhom01_www.user.dto.TokenRefreshRequest;
 import vn.edu.iuh.nhom01_www.user.dto.VerifyOtpRequest;
+import vn.edu.iuh.nhom01_www.user.dto.VerifyOtpRequest;
 import vn.edu.iuh.nhom01_www.user.service.AuthService;
+import vn.edu.iuh.nhom01_www.common.audit.annotation.Auditable;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -20,6 +22,7 @@ public class AuthController {
     private final AuthService authService;
 
     @PostMapping("/register")
+    @Auditable(action = "REGISTER", entityName = "Auth")
     public ResponseEntity<ApiResponse<Object>> register(@Valid @RequestBody RegisterRequest request) {
         Object response = authService.register(request);
         return ResponseEntity.ok(new ApiResponse<>(true, "Registration successful. Please verify OTP.", response));
@@ -32,6 +35,7 @@ public class AuthController {
     }
 
     @PostMapping("/login")
+    @Auditable(action = "LOGIN", entityName = "Auth")
     public ResponseEntity<ApiResponse<JwtResponse>> login(@Valid @RequestBody LoginRequest request) {
         JwtResponse response = authService.login(request);
         return ResponseEntity.ok(new ApiResponse<>(true, "Login successful", response));
@@ -43,12 +47,14 @@ public class AuthController {
         return ResponseEntity.ok(new ApiResponse<>(true, "Token refreshed successfully", response));
     }
     @PostMapping("/forgot-password")
+    @Auditable(action = "FORGOT_PASSWORD", entityName = "Auth")
     public ResponseEntity<ApiResponse<Object>> forgotPassword(@Valid @RequestBody vn.edu.iuh.nhom01_www.user.dto.ForgotPasswordRequest request) {
         Object response = authService.forgotPassword(request);
         return ResponseEntity.ok(new ApiResponse<>(true, "Password reset initiated", response));
     }
 
     @PostMapping("/reset-password")
+    @Auditable(action = "RESET_PASSWORD", entityName = "Auth")
     public ResponseEntity<ApiResponse<Object>> resetPassword(@Valid @RequestBody vn.edu.iuh.nhom01_www.user.dto.ResetPasswordRequest request) {
         Object response = authService.resetPassword(request);
         return ResponseEntity.ok(new ApiResponse<>(true, "Password reset successful", response));

@@ -8,7 +8,9 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import vn.edu.iuh.nhom01_www.common.dto.ApiResponse;
 import vn.edu.iuh.nhom01_www.user.dto.UpdatePasswordRequest;
+import vn.edu.iuh.nhom01_www.user.dto.UpdatePasswordRequest;
 import vn.edu.iuh.nhom01_www.user.service.UserService;
+import vn.edu.iuh.nhom01_www.common.audit.annotation.Auditable;
 
 @RestController
 @RequestMapping("/api/me")
@@ -25,6 +27,7 @@ public class UserController {
     }
 
     @PutMapping("/profile")
+    @Auditable(action = "UPDATE_PROFILE", entityName = "User")
     public ResponseEntity<ApiResponse<Object>> updateProfile(@Valid @RequestBody vn.edu.iuh.nhom01_www.user.dto.UpdateProfileRequest request) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         String email = authentication.getName();
@@ -32,6 +35,7 @@ public class UserController {
     }
 
     @PutMapping("/password")
+    @Auditable(action = "UPDATE_PASSWORD", entityName = "User")
     public ResponseEntity<ApiResponse<Object>> updatePassword(@Valid @RequestBody UpdatePasswordRequest request) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         String email = authentication.getName();
