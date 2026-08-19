@@ -24,9 +24,16 @@ public class JwtUtils {
                 .map(authority -> authority.getAuthority())
                 .collect(java.util.stream.Collectors.toList());
 
+        Long version = 0L;
+        if (userDetails instanceof CustomUserDetails) {
+            Long v = ((CustomUserDetails) userDetails).getVersion();
+            if (v != null) version = v;
+        }
+
         return Jwts.builder()
                 .subject(userDetails.getUsername())
                 .claim("roles", roles)
+                .claim("version", version)
                 .issuedAt(new Date())
                 .expiration(new Date((new Date()).getTime() + jwtExpirationMs))
                 .signWith(key())
@@ -40,6 +47,15 @@ public class JwtUtils {
     public String getUsernameFromToken(String token) {
         return Jwts.parser().verifyWith((javax.crypto.SecretKey) key()).build()
                .parseSignedClaims(token).getPayload().getSubject();
+    }
+
+    public Long getVersionFromToken(String token) {
+        Object version = Jwts.parser().verifyWith((javax.crypto.SecretKey) key()).build()
+                .parseSignedClaims(token).getPayload().get("version");
+        if (version instanceof Number) {
+            return ((Number) version).longValue();
+        }
+        return 0L;
     }
 
     public boolean validateToken(String authToken) {

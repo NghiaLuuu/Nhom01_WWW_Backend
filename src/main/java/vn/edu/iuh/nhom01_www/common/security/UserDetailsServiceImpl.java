@@ -31,8 +31,8 @@ public class UserDetailsServiceImpl implements UserDetailsService {
         // Try Customer First
         Customer customer = customerRepository.findByEmail(email);
         if (customer != null) {
-            return new User(customer.getEmail(), customer.getPassword(), 
-                    Collections.singletonList(new SimpleGrantedAuthority("ROLE_CUSTOMER")));
+            return new CustomUserDetails(customer.getEmail(), customer.getPassword(), 
+                    Collections.singletonList(new SimpleGrantedAuthority("ROLE_CUSTOMER")), customer.getVersion());
         }
 
         // Try Staff Second
@@ -55,7 +55,7 @@ public class UserDetailsServiceImpl implements UserDetailsService {
                     });
                 }
             }
-            return new User(staff.getEmail(), staff.getPassword(), authorities);
+            return new CustomUserDetails(staff.getEmail(), staff.getPassword(), authorities, staff.getVersion());
         }
 
         throw new UsernameNotFoundException("User not found with email: " + email);

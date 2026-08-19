@@ -23,7 +23,7 @@ public class RefreshTokenService {
     private final RefreshTokenRepository refreshTokenRepository;
 
     @Transactional
-    public RefreshToken createRefreshToken(String userEmail) {
+    public RefreshToken createRefreshToken(String userEmail, Long version) {
         // Strict rotation: Optional - delete old tokens for this user first
         refreshTokenRepository.deleteByUserEmail(userEmail);
 
@@ -31,6 +31,7 @@ public class RefreshTokenService {
                 .userEmail(userEmail)
                 .token(UUID.randomUUID().toString())
                 .expiryDate(Instant.now().plusMillis(refreshTokenDurationMs))
+                .version(version)
                 .build();
 
         return refreshTokenRepository.save(refreshToken);

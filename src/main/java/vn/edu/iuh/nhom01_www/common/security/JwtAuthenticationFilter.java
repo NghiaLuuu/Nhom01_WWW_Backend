@@ -31,6 +31,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 String username = jwtUtils.getUsernameFromToken(jwt);
 
                 UserDetails userDetails = userDetailsService.loadUserByUsername(username);
+                
+                // Token invalidation check using versioning
+                if (userDetails instanceof CustomUserDetails) {
+                    Long tokenVersion = jwtUtils.getVersionFromToken(jwt);
+                    Long dbVersion = ((CustomUserDetails) userDetails).getVersion();
+                    if (dbVersion != null && !dbVersion.equals(tokenVersion)) {
+                        throw new RuntimeException("Token version does not match database version. Please login again.");
+                    }
+                }
+
                 UsernamePasswordAuthenticationToken authentication =
                         new UsernamePasswordAuthenticationToken(
                                 userDetails,

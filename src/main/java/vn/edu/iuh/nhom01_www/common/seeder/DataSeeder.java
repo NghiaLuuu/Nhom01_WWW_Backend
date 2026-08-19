@@ -82,7 +82,7 @@ public class DataSeeder implements CommandLineRunner {
     private void clearDatabase() {
         log.info("Đang xóa dữ liệu cũ (Sử dụng TRUNCATE CASCADE để tránh lỗi khóa ngoại)...");
         jdbcTemplate.execute(
-                "TRUNCATE TABLE cancel_requests, payments, tickets, bookings, trips, seats, vehicles, routes, staff_permissions, staffs, customers, role_permissions, roles, permissions, table_metadata RESTART IDENTITY CASCADE");
+                "TRUNCATE TABLE refresh_tokens, cancel_requests, payments, tickets, bookings, trips, seats, vehicles, routes, staff_permissions, staffs, customers, role_permissions, roles, permissions, table_metadata RESTART IDENTITY CASCADE");
         log.info("Xóa dữ liệu cũ thành công!");
     }
 

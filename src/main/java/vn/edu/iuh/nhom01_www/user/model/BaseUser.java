@@ -45,4 +45,7 @@ public abstract class BaseUser {
 
     @UpdateTimestamp
     private LocalDateTime updatedAt;
+
+    @Version
+    private Long version;
 }

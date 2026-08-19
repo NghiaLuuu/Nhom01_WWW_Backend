@@ -138,7 +138,12 @@ public class AuthServiceImpl implements AuthService {
         UserDetails userDetails = (UserDetails) authentication.getPrincipal();
         String jwt = jwtUtils.generateToken(userDetails);
         
-        RefreshToken refreshToken = refreshTokenService.createRefreshToken(userDetails.getUsername());
+        Long version = 0L;
+        if (userDetails instanceof vn.edu.iuh.nhom01_www.common.security.CustomUserDetails) {
+            Long v = ((vn.edu.iuh.nhom01_www.common.security.CustomUserDetails) userDetails).getVersion();
+            if (v != null) version = v;
+        }
+        RefreshToken refreshToken = refreshTokenService.createRefreshToken(userDetails.getUsername(), version);
         
         return JwtResponse.builder()
                 .accessToken(jwt)
@@ -155,14 +160,25 @@ public class AuthServiceImpl implements AuthService {
                 .map(refreshTokenService::verifyExpiration)
                 .map(refreshToken -> {
                     String userEmail = refreshToken.getUserEmail();
+                    UserDetails userDetails = userDetailsService.loadUserByUsername(userEmail);
+                    
+                    Long dbVersion = 0L;
+                    if (userDetails instanceof vn.edu.iuh.nhom01_www.common.security.CustomUserDetails) {
+                        Long v = ((vn.edu.iuh.nhom01_www.common.security.CustomUserDetails) userDetails).getVersion();
+                        if (v != null) dbVersion = v;
+                    }
+                    
+                    if (refreshToken.getVersion() != null && !refreshToken.getVersion().equals(dbVersion)) {
+                        refreshTokenService.deleteByToken(refreshToken);
+                        throw new CustomException("User data has changed. Please login again.", HttpStatus.UNAUTHORIZED);
+                    }
                     
                     // Strict rotation: delete old token
                     refreshTokenService.deleteByToken(refreshToken);
                     
                     // Issue new refresh token
-                    RefreshToken newRefreshToken = refreshTokenService.createRefreshToken(userEmail);
+                    RefreshToken newRefreshToken = refreshTokenService.createRefreshToken(userEmail, dbVersion);
                     
-                    UserDetails userDetails = userDetailsService.loadUserByUsername(userEmail);
                     String newAccessToken = jwtUtils.generateToken(userDetails);
                     
                     return JwtResponse.builder()
