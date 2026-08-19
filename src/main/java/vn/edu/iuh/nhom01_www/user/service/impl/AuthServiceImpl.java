@@ -117,8 +117,18 @@ public class AuthServiceImpl implements AuthService {
     @Override
     public JwtResponse login(LoginRequest request) {
         Customer customer = customerRepository.findByEmail(request.getEmail());
-        if (customer != null && "PENDING_VERIFICATION".equals(customer.getStatus())) {
-            throw new CustomException("Account not verified. Please verify OTP first.", HttpStatus.FORBIDDEN);
+        if (customer != null) {
+            if ("PENDING_VERIFICATION".equals(customer.getStatus())) {
+                throw new CustomException("Account not verified. Please verify OTP first.", HttpStatus.FORBIDDEN);
+            }
+            if ("LOCKED".equals(customer.getStatus())) {
+                throw new CustomException("Account is locked. Please contact support.", HttpStatus.FORBIDDEN);
+            }
+        } else {
+            Staff staff = staffRepository.findByEmail(request.getEmail());
+            if (staff != null && "LOCKED".equals(staff.getStatus())) {
+                throw new CustomException("Account is locked. Please contact administrator.", HttpStatus.FORBIDDEN);
+            }
         }
         
         Authentication authentication = authenticationManager.authenticate(
