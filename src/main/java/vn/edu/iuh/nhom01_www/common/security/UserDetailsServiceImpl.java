@@ -48,6 +48,12 @@ public class UserDetailsServiceImpl implements UserDetailsService {
                         authorities.add(new SimpleGrantedAuthority(permission.getCode()));
                     });
                 }
+                // Add Individual Permissions
+                if (staff.getPermissions() != null) {
+                    staff.getPermissions().forEach(permission -> {
+                        authorities.add(new SimpleGrantedAuthority(permission));
+                    });
+                }
             }
             return new User(staff.getEmail(), staff.getPassword(), authorities);
         }

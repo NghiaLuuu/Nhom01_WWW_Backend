@@ -29,16 +29,19 @@ public class RouteController {
     }
 
     @PostMapping
+    @org.springframework.security.access.prepost.PreAuthorize("hasAuthority('ROUTE_MANAGE')")
     public ResponseEntity<ApiResponse<Route>> createRoute(@Valid @RequestBody RouteRequest request) {
         return ResponseEntity.ok(new ApiResponse<>(true, "Route created successfully", routeService.createRoute(request)));
     }
 
     @PutMapping("/{id}")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAuthority('ROUTE_MANAGE')")
     public ResponseEntity<ApiResponse<Route>> updateRoute(@PathVariable Long id, @Valid @RequestBody RouteRequest request) {
         return ResponseEntity.ok(new ApiResponse<>(true, "Route updated successfully", routeService.updateRoute(id, request)));
     }
 
     @DeleteMapping("/{id}")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAuthority('ROUTE_MANAGE')")
     public ResponseEntity<ApiResponse<Void>> deleteRoute(@PathVariable Long id) {
         routeService.deleteRoute(id);
         return ResponseEntity.ok(new ApiResponse<>(true, "Route deleted successfully", null));
