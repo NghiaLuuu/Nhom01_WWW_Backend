@@ -22,7 +22,6 @@ public class RouteController {
     public ResponseEntity<ApiResponse<List<Route>>> getAllRoutes() {
         return ResponseEntity.ok(new ApiResponse<>(true, "Success", routeService.getAllRoutes()));
     }
-
     @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<Route>> getRouteById(@PathVariable Long id) {
         return ResponseEntity.ok(new ApiResponse<>(true, "Success", routeService.getRouteById(id)));
