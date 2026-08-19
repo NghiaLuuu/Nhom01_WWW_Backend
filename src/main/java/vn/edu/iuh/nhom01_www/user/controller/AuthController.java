@@ -19,6 +19,7 @@ import vn.edu.iuh.nhom01_www.common.audit.annotation.Auditable;
 public class AuthController {
 
     private final AuthService authService;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     @PostMapping("/register")
     @Auditable(action = "REGISTER", entityName = "Auth")
