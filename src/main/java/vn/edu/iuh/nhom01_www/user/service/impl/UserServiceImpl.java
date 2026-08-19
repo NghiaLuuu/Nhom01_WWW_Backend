@@ -165,19 +165,25 @@ public class UserServiceImpl implements UserService {
     public Object updateProfile(String email, vn.edu.iuh.nhom01_www.user.dto.UpdateProfileRequest request) {
         Customer customer = customerRepository.findByEmail(email);
         if (customer != null) {
-            if (request.getFullName() != null && !request.getFullName().isBlank()) customer.setFullName(request.getFullName());
-            if (request.getPhoneNumber() != null) customer.setPhoneNumber(request.getPhoneNumber());
-            if (request.getDateOfBirth() != null) customer.setDateOfBirth(request.getDateOfBirth());
-            if (request.getAddress() != null) customer.setAddress(request.getAddress());
-            return customerRepository.save(customer);
+            customerRepository.updateProfileByEmail(
+                email, 
+                request.getFullName() != null && !request.getFullName().isBlank() ? request.getFullName() : null,
+                request.getPhoneNumber(),
+                request.getDateOfBirth(),
+                request.getAddress()
+            );
+            return customerRepository.findByEmail(email);
         }
 
         Staff staff = staffRepository.findByEmail(email);
         if (staff != null) {
-            if (request.getFullName() != null && !request.getFullName().isBlank()) staff.setFullName(request.getFullName());
-            if (request.getPhoneNumber() != null) staff.setPhoneNumber(request.getPhoneNumber());
-            if (request.getDateOfBirth() != null) staff.setDateOfBirth(request.getDateOfBirth());
-            return staffRepository.save(staff);
+            staffRepository.updateProfileByEmail(
+                email,
+                request.getFullName() != null && !request.getFullName().isBlank() ? request.getFullName() : null,
+                request.getPhoneNumber(),
+                request.getDateOfBirth()
+            );
+            return staffRepository.findByEmail(email);
         }
 
         throw new CustomException("Profile not found", HttpStatus.NOT_FOUND);
@@ -191,8 +197,8 @@ public class UserServiceImpl implements UserService {
             if (!passwordEncoder.matches(request.getOldPassword(), customer.getPassword())) {
                 throw new CustomException("Old password does not match", HttpStatus.BAD_REQUEST);
             }
-            customer.setPassword(passwordEncoder.encode(request.getNewPassword()));
-            return customerRepository.save(customer);
+            customerRepository.updatePasswordByEmail(email, passwordEncoder.encode(request.getNewPassword()));
+            return customerRepository.findByEmail(email);
         }
 
         Staff staff = staffRepository.findByEmail(email);
@@ -200,8 +206,8 @@ public class UserServiceImpl implements UserService {
             if (!passwordEncoder.matches(request.getOldPassword(), staff.getPassword())) {
                 throw new CustomException("Old password does not match", HttpStatus.BAD_REQUEST);
             }
-            staff.setPassword(passwordEncoder.encode(request.getNewPassword()));
-            return staffRepository.save(staff);
+            staffRepository.updatePasswordByEmail(email, passwordEncoder.encode(request.getNewPassword()));
+            return staffRepository.findByEmail(email);
         }
 
         throw new CustomException("User not found", HttpStatus.NOT_FOUND);
