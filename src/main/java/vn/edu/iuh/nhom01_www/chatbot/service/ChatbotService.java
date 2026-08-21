@@ -1,6 +1,8 @@
 package vn.edu.iuh.nhom01_www.chatbot.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.model.ChatModel;
@@ -24,10 +26,24 @@ public class ChatbotService {
     private final ChatModel chatModel;
     private final TableMetadataRepository tableMetadataRepository;
     private final JdbcTemplate jdbcTemplate;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper = new ObjectMapper()
+            .registerModule(new JavaTimeModule())
+            .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
+            .setTimeZone(java.util.TimeZone.getTimeZone("Asia/Ho_Chi_Minh"));
 
     public Object ask(ChatbotRequest request, String currentUserEmail) {
         String userQuestion = request.getQuestion();
+        
+        String historyContext = "";
+        if (request.getHistory() != null && !request.getHistory().isEmpty()) {
+            historyContext = request.getHistory().stream()
+                    .map(msg -> (msg.getRole().equalsIgnoreCase("user") ? "User: " : "Bot: ") + msg.getContent())
+                    .collect(Collectors.joining("\n"));
+        }
+        
+        String fullContext = historyContext.isEmpty() ?
+                "Người dùng hỏi: '" + userQuestion + "'" :
+                "Lịch sử chat:\n" + historyContext + "\nNgười dùng hỏi: '" + userQuestion + "'";
 
         // Stage 0: Pre-execution Guardrail
         String guardrailPrompt = String.format(
@@ -52,21 +68,51 @@ public class ChatbotService {
 
         // Stage 1: Routing
         String routingPrompt = String.format(
-                "Người dùng hỏi: '%s'.\n" +
+                "%s\n" +
                 "Dưới đây là các bảng dữ liệu trong hệ thống:\n" +
                 "%s\n" +
-                "Dựa vào câu hỏi, hãy cho biết cần truy vấn dữ liệu từ những bảng nào? " +
+                "Dựa vào ngữ cảnh trên, hãy cho biết cần truy vấn dữ liệu từ những bảng nào để trả lời câu hỏi cuối cùng? " +
                 "Hãy trả lời CHỈ BẰNG TÊN CÁC BẢNG cách nhau bằng dấu phẩy, không giải thích gì thêm.",
-                userQuestion, metadataContext);
+                fullContext, metadataContext);
         
         String chosenTablesStr = chatModel.call(routingPrompt).trim();
         log.info("Stage 1 - Chosen Tables: {}", chosenTablesStr);
 
         // Prepare schema for SQL Generation
-        String schemaContext = allMetadata.stream()
-                .filter(m -> chosenTablesStr.contains(m.getTableName()))
-                .map(m -> m.getSchemaDefinition())
-                .collect(Collectors.joining("\n\n"));
+        List<String> validTables = allMetadata.stream().map(m -> m.getTableName()).collect(Collectors.toList());
+        List<String> selectedTables = java.util.Arrays.stream(chosenTablesStr.split(","))
+                .map(s -> s.trim())
+                .filter(validTables::contains)
+                .collect(Collectors.toList());
+
+        String schemaContext = "";
+        if (!selectedTables.isEmpty()) {
+            String inClause = selectedTables.stream().map(t -> "'" + t + "'").collect(Collectors.joining(","));
+            String schemaSql = "SELECT table_name, column_name, data_type " +
+                               "FROM information_schema.columns " +
+                               "WHERE table_schema = 'public' AND table_name IN (" + inClause + ")";
+            try {
+                List<Map<String, Object>> columnsList = jdbcTemplate.queryForList(schemaSql);
+                Map<String, List<Map<String, Object>>> groupedCols = columnsList.stream()
+                    .collect(Collectors.groupingBy(row -> (String) row.get("table_name")));
+
+                schemaContext = groupedCols.entrySet().stream().map(entry -> {
+                    String tableName = entry.getKey();
+                    String cols = entry.getValue().stream()
+                        .map(row -> row.get("column_name") + " (" + row.get("data_type") + ")")
+                        .collect(Collectors.joining(", "));
+                    
+                    String desc = allMetadata.stream()
+                            .filter(m -> m.getTableName().equals(tableName))
+                            .findFirst()
+                            .map(m -> m.getShortDescription())
+                            .orElse("");
+                    return "Table '" + tableName + "' - Description: " + desc + "\nColumns: " + cols;
+                }).collect(Collectors.joining("\n\n"));
+            } catch(Exception e) {
+                log.error("Failed to fetch schema dynamically", e);
+            }
+        }
 
         if (schemaContext.isEmpty()) {
             return Map.of("answer", "Xin lỗi, tôi không tìm thấy dữ liệu phù hợp để trả lời câu hỏi của bạn.");
@@ -85,13 +131,16 @@ public class ChatbotService {
                 sqlPrompt = String.format(
                         "Dựa vào schema CSDL PostgreSQL sau:\n" +
                         "%s\n\n" +
+                        "THÔNG TIN HỆ THỐNG: Ngày giờ hiện tại là %s. Nếu người dùng chỉ nói ngày/tháng (ví dụ: ngày 15/08) hoặc nói 'hôm nay', hãy dùng ngày giờ này làm mốc.\n\n" +
                         "Tối hậu thư bảo mật: KHÔNG ĐƯỢC tạo truy vấn lấy dữ liệu cá nhân (tên, email, sđt, mật khẩu) của người dùng khác. " +
                         "Chỉ được tra cứu các thông tin PUBLIC (tuyến đường, chuyến xe, giá vé, lịch trình) hoặc thông tin cá nhân của CHÍNH người dùng hiện tại (Email: %s). " +
                         "Nếu câu hỏi yêu cầu lấy thông tin riêng tư của người khác, hãy trả về chính xác câu lệnh: SELECT 'VIOLATION' as error;\n\n" +
                         "QUAN TRỌNG: Khi tìm kiếm theo chuỗi (như tên địa điểm, tên người), KHÔNG ĐƯỢC DÙNG toán tử '=', MÀ BẮT BUỘC phải dùng toán tử ILIKE với ký tự đại diện '%%' ở hai đầu để tìm kiếm tương đối và không phân biệt hoa thường. Ví dụ: ILIKE '%%Đà Nẵng%%' hoặc ILIKE '%%Huế%%'.\n\n" +
-                        "Hãy viết MỘT câu lệnh SQL SELECT duy nhất để trả lời câu hỏi của người dùng: '%s'.\n" +
+                        "MẸO TỐI ƯU TRUY VẤN: Ưu tiên dùng `SELECT *` hoặc SELECT các cột có ích thay vì dùng các hàm gom/cắt gọt dữ liệu làm mất thông tin (như DATE_TRUNC, COUNT). Hãy để phần đếm/tổng hợp cho AI tự xử lý ở bước sinh ngôn ngữ tự nhiên. Lưu ý cột 'status' của bảng trips thường mang giá trị 'PENDING' (đang mở bán/chờ chạy) hoặc 'COMPLETED' (đã chạy xong). Tuyệt đối không tự ý lọc status = 'ACTIVE'.\n\n" +
+                        "Dựa vào ngữ cảnh sau:\n%s\n\n" +
+                        "Hãy viết MỘT câu lệnh SQL SELECT duy nhất để trả lời câu hỏi cuối cùng của người dùng.\n" +
                         "LƯU Ý QUAN TRỌNG: Chỉ trả về câu lệnh SQL thô, không dùng code block, không giải thích.",
-                        schemaContext, currentUserEmail, userQuestion);
+                        schemaContext, java.time.LocalDateTime.now().toString(), currentUserEmail, fullContext);
             } else {
                 sqlPrompt = String.format(
                         "Câu lệnh SQL trước đó bạn viết: '%s' đã gây ra lỗi Database sau: '%s'.\n" +
