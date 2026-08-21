@@ -23,8 +23,9 @@ public class AuditLogController {
     public ResponseEntity<ApiResponse<Page<AuditLog>>> getAuditLogs(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
-            @RequestParam(required = false) String entityName) {
-        Page<AuditLog> result = auditLogService.getAuditLogs(page, size, entityName);
+            @RequestParam(required = false) String entityName,
+            @RequestParam(required = false) String userEmail) {
+        Page<AuditLog> result = auditLogService.getAuditLogs(page, size, entityName, userEmail);
         return ResponseEntity.ok(new ApiResponse<>(true, "Success", result));
     }
 
@@ -32,5 +33,11 @@ public class AuditLogController {
     public ResponseEntity<ApiResponse<List<String>>> getEntityNames() {
         List<String> entityNames = auditLogService.getDistinctEntityNames();
         return ResponseEntity.ok(new ApiResponse<>(true, "Success", entityNames));
+    }
+
+    @GetMapping("/user-emails")
+    public ResponseEntity<ApiResponse<List<String>>> searchUserEmails(@RequestParam String keyword) {
+        List<String> emails = auditLogService.searchUserEmails(keyword);
+        return ResponseEntity.ok(new ApiResponse<>(true, "Success", emails));
     }
 }

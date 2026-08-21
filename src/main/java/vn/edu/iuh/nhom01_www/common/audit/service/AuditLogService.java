@@ -19,16 +19,33 @@ public class AuditLogService {
     private final AuditLogRepository auditLogRepository;
 
     @Transactional(readOnly = true)
-    public Page<AuditLog> getAuditLogs(int page, int size, String entityName) {
+    public Page<AuditLog> getAuditLogs(int page, int size, String entityName, String userEmail) {
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
-        if (entityName != null && !entityName.isBlank()) {
+        
+        boolean hasEntity = entityName != null && !entityName.isBlank();
+        boolean hasEmail = userEmail != null && !userEmail.isBlank();
+
+        if (hasEntity && hasEmail) {
+            return auditLogRepository.findByEntityNameAndUserEmailContainingIgnoreCase(entityName, userEmail, pageable);
+        } else if (hasEntity) {
             return auditLogRepository.findByEntityName(entityName, pageable);
+        } else if (hasEmail) {
+            return auditLogRepository.findByUserEmailContainingIgnoreCase(userEmail, pageable);
         }
+        
         return auditLogRepository.findAll(pageable);
     }
 
     @Transactional(readOnly = true)
     public List<String> getDistinctEntityNames() {
         return auditLogRepository.findDistinctEntityNames();
+    }
+
+    @Transactional(readOnly = true)
+    public List<String> searchUserEmails(String keyword) {
+        if (keyword == null || keyword.trim().isEmpty()) {
+            return List.of();
+        }
+        return auditLogRepository.findDistinctUserEmailsByKeyword(keyword.trim());
     }
 }
