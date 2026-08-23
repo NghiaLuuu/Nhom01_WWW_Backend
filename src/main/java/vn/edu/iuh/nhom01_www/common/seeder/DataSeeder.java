@@ -309,6 +309,21 @@ public class DataSeeder implements CommandLineRunner {
                                 .schemaDefinition(
                                                 "CREATE TABLE trips (id BIGINT PRIMARY KEY, route_id BIGINT, vehicle_id BIGINT, departure_time TIMESTAMP, price DECIMAL(38,2), status VARCHAR(255));")
                                 .build());
+                tableMetadataRepository.save(TableMetadata.builder().tableName("customers")
+                                .shortDescription("Chứa thông tin khách hàng, dùng để đối chiếu email người dùng đang đăng nhập")
+                                .schemaDefinition(
+                                                "CREATE TABLE customers (id UUID PRIMARY KEY, email VARCHAR(255), full_name VARCHAR(255), phone_number VARCHAR(255));")
+                                .build());
+                tableMetadataRepository.save(TableMetadata.builder().tableName("bookings")
+                                .shortDescription("Chứa lịch sử đặt vé (hóa đơn) của khách hàng (customer_id)")
+                                .schemaDefinition(
+                                                "CREATE TABLE bookings (id BIGINT PRIMARY KEY, customer_id UUID, trip_id BIGINT, status VARCHAR(255), total_price DECIMAL(38,2), created_at TIMESTAMP);")
+                                .build());
+                tableMetadataRepository.save(TableMetadata.builder().tableName("tickets")
+                                .shortDescription("Chứa thông tin chi tiết từng vé (ghế ngồi) thuộc về một booking")
+                                .schemaDefinition(
+                                                "CREATE TABLE tickets (id BIGINT PRIMARY KEY, booking_id BIGINT, seat_id BIGINT, price DECIMAL(38,2), status VARCHAR(255));")
+                                .build());
         }
 
         private Vehicle createVehicle(String licensePlate, String type, int capacity) {

@@ -48,11 +48,13 @@ public class ChatbotService {
         // Stage 0: Pre-execution Guardrail
         String guardrailPrompt = String.format(
                 "Kiểm tra xem câu hỏi sau có chứa nội dung bậy bạ, nhạy cảm, độc hại, hoặc yêu cầu lấy thông tin cá nhân/nhạy cảm của người khác không. " +
-                "Câu hỏi: '%s'. Trả lời 'SAFE' nếu an toàn, hoặc trả lời một câu từ chối lịch sự nếu vi phạm.",
+                "Câu hỏi: '%s'. QUAN TRỌNG: Nếu an toàn, BẮT BUỘC CHỈ trả về duy nhất chữ 'SAFE' (không thêm bất kỳ từ nào khác, không giải thích). Nếu vi phạm, hãy trả lời một câu từ chối lịch sự.",
                 userQuestion);
         String guardrailResult = chatModel.call(guardrailPrompt).trim();
         log.info("Stage 0 - Guardrail Result: {}", guardrailResult);
-        if (!"SAFE".equalsIgnoreCase(guardrailResult)) {
+        
+        String cleanResult = guardrailResult.replaceAll("^[\"'.`]+|[\"'.`]+$", "").trim();
+        if (!"SAFE".equalsIgnoreCase(cleanResult) && !guardrailResult.toUpperCase().contains("SAFE")) {
             return Map.of("answer", guardrailResult);
         }
 
