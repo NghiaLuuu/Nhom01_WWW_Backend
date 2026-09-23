@@ -74,11 +74,22 @@ public class ChatbotService {
                 "Dưới đây là các bảng dữ liệu trong hệ thống:\n" +
                 "%s\n" +
                 "Dựa vào ngữ cảnh trên, hãy cho biết cần truy vấn dữ liệu từ những bảng nào để trả lời câu hỏi cuối cùng? " +
-                "Hãy trả lời CHỈ BẰNG TÊN CÁC BẢNG cách nhau bằng dấu phẩy, không giải thích gì thêm.",
+                "Nếu câu hỏi chỉ là lời chào hỏi giao tiếp (như hello, xin chào, bạn là ai, hey) hoặc không liên quan đến tra cứu dữ liệu, BẮT BUỘC trả về duy nhất chữ 'NONE'.\n" +
+                "Ngược lại, hãy trả lời CHỈ BẰNG TÊN CÁC BẢNG cách nhau bằng dấu phẩy, không giải thích gì thêm.",
                 fullContext, metadataContext);
         
         String chosenTablesStr = chatModel.call(routingPrompt).trim();
         log.info("Stage 1 - Chosen Tables: {}", chosenTablesStr);
+
+        String dbResultJson = "[]";
+        boolean sqlSuccess = false;
+        String rawSql = "";
+        String lastError = "";
+
+        if ("NONE".equalsIgnoreCase(chosenTablesStr.replaceAll("^[\"'.`]+|[\"'.`]+$", "").trim()) || chosenTablesStr.toUpperCase().contains("NONE")) {
+            sqlSuccess = true;
+            log.info("Stage 1 - Detected greeting or non-query. Skipping SQL execution.");
+        } else {
 
         // Prepare schema for SQL Generation
         List<String> validTables = allMetadata.stream().map(m -> m.getTableName()).collect(Collectors.toList());
@@ -121,11 +132,6 @@ public class ChatbotService {
         }
 
         // Stage 2 & 3: SQL Generation & Execution Loop
-        String dbResultJson = "[]";
-        boolean sqlSuccess = false;
-        String rawSql = "";
-        String lastError = "";
-
         for (int i = 1; i <= 5; i++) {
             log.info("Stage 2 & 3 - Attempt {}/5", i);
             String sqlPrompt;
@@ -180,6 +186,8 @@ public class ChatbotService {
                 log.error("Stage 3 - SQL Execution Error on attempt {}: {}", i, lastError);
             }
         }
+        
+        } // End of else block for SQL execution
 
         if (!sqlSuccess) {
             return Map.of("answer", "Xin lỗi, tôi đang gặp khó khăn khi tra cứu dữ liệu cho câu hỏi này. Vui lòng thử lại với cách hỏi khác.");
@@ -190,7 +198,8 @@ public class ChatbotService {
                 "Bạn là một nhân viên chăm sóc khách hàng thân thiện của hãng xe khách.\n" +
                 "Khách hàng hỏi: '%s'\n" +
                 "Dữ liệu tra cứu được từ hệ thống (định dạng JSON): %s\n\n" +
-                "Dựa vào dữ liệu trên, hãy tóm tắt và trả lời khách hàng bằng tiếng Việt một cách tự nhiên. Nếu JSON rỗng ([]), hãy báo là không tìm thấy thông tin.\n" +
+                "Dựa vào dữ liệu trên, hãy tóm tắt và trả lời khách hàng bằng tiếng Việt một cách tự nhiên. " +
+                "Nếu dữ liệu JSON rỗng ([]): nếu khách hàng đang hỏi tra cứu dữ liệu thì báo là không tìm thấy thông tin; còn nếu khách hàng chỉ đang chào hỏi giao tiếp (như hello, xin chào) thì hãy đáp lại lịch sự và hỏi xem bạn có thể giúp gì.\n" +
                 "QUAN TRỌNG: Nếu khách hàng có ý định muốn ĐẶT VÉ (mua vé, chọn ghế, thanh toán) cho một chuyến xe cụ thể và bạn tìm thấy 'id' của chuyến xe đó trong JSON, " +
                 "hãy thêm chính xác thẻ [[BOOK_TRIP_ID:<id>]] vào CUỐI câu trả lời của bạn. Thay <id> bằng mã id của chuyến xe.",
                 userQuestion, dbResultJson);
