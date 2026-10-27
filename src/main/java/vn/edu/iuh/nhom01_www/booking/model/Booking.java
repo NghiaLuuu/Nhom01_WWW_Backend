@@ -39,8 +39,6 @@ public class Booking {
     @Column(nullable = false)
     private BigDecimal totalPrice;
 
-    private LocalDateTime holdExpiresAt;
-
     @CreationTimestamp
     @Column(updatable = false)
     private LocalDateTime createdAt;
@@ -54,16 +52,12 @@ public class Booking {
     @OneToMany(mappedBy = "booking", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Ticket> tickets;
 
-    public boolean isHoldExpired() {
-        return "PENDING_PAYMENT".equals(status) && holdExpiresAt != null && holdExpiresAt.isBefore(LocalDateTime.now());
-    }
-
     public void markAsPaid() {
         this.status = "PAID";
     }
 
     public void expireBooking() {
-        this.status = "EXPIRED";
+        this.status = "CANCELLED";
     }
 
     public void cancelBooking() {

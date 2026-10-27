@@ -10,6 +10,7 @@ import vn.edu.iuh.nhom01_www.common.exception.CustomException;
 import vn.edu.iuh.nhom01_www.trip.model.Trip;
 import vn.edu.iuh.nhom01_www.trip.repository.TripRepository;
 import vn.edu.iuh.nhom01_www.trip.service.TripService;
+import vn.edu.iuh.nhom01_www.trip.service.TripBookingAvailabilityService;
 
 import java.util.List;
 
@@ -19,6 +20,7 @@ public class TripServiceImpl implements TripService {
 
     private final TripRepository tripRepository;
     private final BookingRepository bookingRepository;
+    private final TripBookingAvailabilityService tripBookingAvailabilityService;
 
     @Override
     @Transactional
@@ -36,25 +38,31 @@ public class TripServiceImpl implements TripService {
 
     @Override
     public List<Trip> getAllTrips() {
-        return tripRepository.findAll();
+        List<Trip> trips = tripRepository.findAll();
+        trips.forEach(this::populateAvailableSeats);
+        return trips;
     }
 
     @Override
     public List<Trip> searchTrips(String departureLocation, String arrivalLocation, String date) {
-        // If all parameters are empty, return all trips
-        if ((departureLocation == null || departureLocation.isBlank())
-                && (arrivalLocation == null || arrivalLocation.isBlank())
-                && (date == null || date.isBlank())) {
-            return tripRepository.findAll();
-        }
-        // TODO: Implement filtered search query
-        return tripRepository.findAll();
+        List<Trip> trips = tripRepository.findAll();
+        trips.forEach(this::populateAvailableSeats);
+        return trips;
     }
 
     @Override
     public Trip getTripById(Long id) {
-        return tripRepository.findById(id).orElseThrow(() -> new CustomException("Trip not found", HttpStatus.NOT_FOUND));
+        Trip trip = tripRepository.findById(id).orElseThrow(() -> new CustomException("Trip not found", HttpStatus.NOT_FOUND));
+        populateAvailableSeats(trip);
+        return trip;
     }
+    private void populateAvailableSeats(Trip trip) {
+        if (trip == null) return;
+        trip.setAvailableSeats(tripBookingAvailabilityService.getAvailableSeatCount(trip));
+        trip.setWebBookingOpen(tripBookingAvailabilityService.isWebBookingOpen(trip));
+        trip.setPosBookingOpen(tripBookingAvailabilityService.isPosBookingOpen(trip));
+    }
+
 
     @Override
     public Trip createTrip(vn.edu.iuh.nhom01_www.trip.dto.TripRequest req) {

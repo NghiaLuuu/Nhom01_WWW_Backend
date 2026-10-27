@@ -3,6 +3,7 @@ package vn.edu.iuh.nhom01_www.user.service.impl;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -15,6 +16,7 @@ import vn.edu.iuh.nhom01_www.common.security.service.RefreshTokenService;
 import vn.edu.iuh.nhom01_www.common.service.EmailService;
 import vn.edu.iuh.nhom01_www.user.dto.JwtResponse;
 import vn.edu.iuh.nhom01_www.user.dto.LoginRequest;
+import vn.edu.iuh.nhom01_www.user.dto.LoginUserResponse;
 import vn.edu.iuh.nhom01_www.user.dto.RegisterRequest;
 import vn.edu.iuh.nhom01_www.user.dto.TokenRefreshRequest;
 import vn.edu.iuh.nhom01_www.user.dto.VerifyOtpRequest;
@@ -27,6 +29,7 @@ import vn.edu.iuh.nhom01_www.common.exception.CustomException;
 import org.springframework.http.HttpStatus;
 
 import java.time.Duration;
+import java.util.Locale;
 import java.util.Random;
 
 @Service
@@ -116,23 +119,30 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public JwtResponse login(LoginRequest request) {
-        Customer customer = customerRepository.findByEmail(request.getEmail());
-        if (customer != null) {
-            if ("PENDING_VERIFICATION".equals(customer.getStatus())) {
-                throw new CustomException("Account not verified. Please verify OTP first.", HttpStatus.FORBIDDEN);
+        String username = request.getUsername().trim();
+        Staff staff = staffRepository.findByEmailIgnoreCase(username);
+        if (staff == null) {
+            staff = staffRepository.findByStaffCodeIgnoreCase(username);
+        }
+
+        if (staff == null) {
+            if (customerRepository.findByEmail(username) != null) {
+                throw new CustomException("Customer accounts cannot access the staff application.", HttpStatus.FORBIDDEN);
             }
-            if ("LOCKED".equals(customer.getStatus())) {
-                throw new CustomException("Account is locked. Please contact support.", HttpStatus.FORBIDDEN);
-            }
-        } else {
-            Staff staff = staffRepository.findByEmail(request.getEmail());
-            if (staff != null && "LOCKED".equals(staff.getStatus())) {
-                throw new CustomException("Account is locked. Please contact administrator.", HttpStatus.FORBIDDEN);
-            }
+            throw new BadCredentialsException("Invalid username or password");
+        }
+
+        if (!"ACTIVE".equalsIgnoreCase(staff.getStatus())) {
+            throw new CustomException("Account is inactive or locked. Please contact administrator.", HttpStatus.FORBIDDEN);
+        }
+
+        String roleName = staff.getRole() == null ? null : staff.getRole().getName();
+        if (!isMobileStaffRole(roleName)) {
+            throw new CustomException("This account is not allowed to access the staff application.", HttpStatus.FORBIDDEN);
         }
         
         Authentication authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword())
+                new UsernamePasswordAuthenticationToken(staff.getEmail(), request.getPassword())
         );
         
         UserDetails userDetails = (UserDetails) authentication.getPrincipal();
@@ -149,7 +159,20 @@ public class AuthServiceImpl implements AuthService {
                 .accessToken(jwt)
                 .refreshToken(refreshToken.getToken())
                 .tokenType("Bearer")
+                .user(LoginUserResponse.builder()
+                        .id(staff.getId())
+                        .username(username)
+                        .role(toMobileRole(roleName))
+                        .build())
                 .build();
+    }
+
+    private boolean isMobileStaffRole(String roleName) {
+        return "ROLE_ADMIN".equalsIgnoreCase(roleName) || "ROLE_STAFF".equalsIgnoreCase(roleName);
+    }
+
+    private String toMobileRole(String roleName) {
+        return roleName.substring("ROLE_".length()).toLowerCase(Locale.ROOT);
     }
 
     @Override

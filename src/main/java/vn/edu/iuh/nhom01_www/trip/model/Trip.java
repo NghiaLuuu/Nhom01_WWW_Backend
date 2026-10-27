@@ -40,6 +40,15 @@ public class Trip {
     @Column(nullable = false)
     private String status;
 
+    @Transient
+    private Integer availableSeats;
+
+    @Transient
+    private Boolean webBookingOpen;
+
+    @Transient
+    private Boolean posBookingOpen;
+
     @JsonIgnore
     @ToString.Exclude
     @EqualsAndHashCode.Exclude
