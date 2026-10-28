@@ -116,3 +116,14 @@ Hệ thống cung cấp sẵn cơ chế `DataSeeder` để reset database và t�
 | **Khách hàng** | `khach1@gmail.com` | `password123` |
 
 > *Lưu ý: Mật khẩu đã được băm (hash) cẩn thận trong cơ sở dữ liệu.*
+
+**Mã vé cố định để test app soát vé sau khi seed:**
+
+| Mã vé | Trường hợp |
+| :--- | :--- |
+| `QR-VALID-TODAY` | Đã thanh toán, trạng thái `ISSUED` (tương đương chưa dùng), khởi hành hôm nay |
+| `QR-ALREADY-USED` | Vé đã dùng, có `usedAt` |
+| `QR-UNPAID` | Booking đang `PENDING_PAYMENT` |
+| `QR-WRONG-DAY` | Đã thanh toán nhưng khởi hành ngày mai |
+
+Backend lắng nghe trên `0.0.0.0:8080`. Khi test từ điện thoại, dùng IP LAN của máy chạy Backend, ví dụ `http://192.168.1.10:8080`, không dùng `localhost`.

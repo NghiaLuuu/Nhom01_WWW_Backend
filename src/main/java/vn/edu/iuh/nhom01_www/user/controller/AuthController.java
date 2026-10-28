@@ -6,6 +6,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import vn.edu.iuh.nhom01_www.common.dto.ApiResponse;
 import vn.edu.iuh.nhom01_www.user.dto.JwtResponse;
+import vn.edu.iuh.nhom01_www.user.dto.LoginApiResponse;
 import vn.edu.iuh.nhom01_www.user.dto.LoginRequest;
 import vn.edu.iuh.nhom01_www.user.dto.RegisterRequest;
 import vn.edu.iuh.nhom01_www.user.dto.TokenRefreshRequest;
@@ -35,9 +36,15 @@ public class AuthController {
 
     @PostMapping("/login")
     @Auditable(action = "LOGIN", entityName = "Auth")
-    public ResponseEntity<ApiResponse<JwtResponse>> login(@Valid @RequestBody LoginRequest request) {
+    public ResponseEntity<LoginApiResponse> login(@Valid @RequestBody LoginRequest request) {
         JwtResponse response = authService.login(request);
-        return ResponseEntity.ok(new ApiResponse<>(true, "Login successful", response));
+        return ResponseEntity.ok(LoginApiResponse.builder()
+                .success(true)
+                .message("Login successful")
+                .token(response.getAccessToken())
+                .user(response.getUser())
+                .data(response)
+                .build());
     }
 
     @PostMapping("/refresh-token")

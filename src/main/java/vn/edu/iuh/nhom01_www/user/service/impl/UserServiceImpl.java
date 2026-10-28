@@ -20,6 +20,11 @@ import vn.edu.iuh.nhom01_www.user.model.Staff;
 import vn.edu.iuh.nhom01_www.user.repository.CustomerRepository;
 import vn.edu.iuh.nhom01_www.user.repository.StaffRepository;
 import vn.edu.iuh.nhom01_www.user.service.UserService;
+import vn.edu.iuh.nhom01_www.booking.repository.BookingRepository;
+import vn.edu.iuh.nhom01_www.trip.repository.TripRepository;
+import java.math.BigDecimal;
+import java.util.Map;
+import java.util.HashMap;
 import vn.edu.iuh.nhom01_www.vehicle.dto.VehicleRequest;
 import vn.edu.iuh.nhom01_www.vehicle.model.Vehicle;
 
@@ -36,6 +41,8 @@ public class UserServiceImpl implements UserService {
     private final CustomerRepository customerRepository;
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
+    private final BookingRepository bookingRepository;
+    private final TripRepository tripRepository;
 
     @Override
     public Object register(RegisterRequest request) { return null; }

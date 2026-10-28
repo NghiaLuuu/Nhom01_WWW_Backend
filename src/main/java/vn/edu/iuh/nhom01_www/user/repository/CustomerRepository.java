@@ -3,8 +3,13 @@ package vn.edu.iuh.nhom01_www.user.repository;
 import org.springframework.data.jpa.repository.JpaRepository;
 import vn.edu.iuh.nhom01_www.user.model.Customer;
 
-public interface CustomerRepository extends JpaRepository<Customer, java.util.UUID> {
+import java.util.Optional;
+import java.util.UUID;
+
+public interface CustomerRepository extends JpaRepository<Customer, UUID> {
     Customer findByEmail(String email);
+    Optional<Customer> findOptionalByEmail(String email);
+    Optional<Customer> findByPhoneNumber(String phoneNumber);
 
     @org.springframework.data.jpa.repository.Modifying
     @org.springframework.data.jpa.repository.Query("UPDATE Customer c SET c.fullName = COALESCE(:fullName, c.fullName), c.phoneNumber = COALESCE(:phoneNumber, c.phoneNumber), c.dateOfBirth = COALESCE(:dateOfBirth, c.dateOfBirth), c.address = COALESCE(:address, c.address) WHERE c.email = :email")

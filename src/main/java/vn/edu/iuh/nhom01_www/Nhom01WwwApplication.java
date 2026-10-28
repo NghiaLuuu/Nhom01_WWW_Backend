@@ -4,10 +4,13 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.scheduling.annotation.EnableScheduling;
 import vn.edu.iuh.nhom01_www.chatbot.model.TableMetadata;
 import vn.edu.iuh.nhom01_www.chatbot.repository.TableMetadataRepository;
 
 @SpringBootApplication
+@EnableScheduling
 public class Nhom01WwwApplication {
 
     public static void main(String[] args) {
@@ -15,8 +18,19 @@ public class Nhom01WwwApplication {
     }
 
     @Bean
-    public CommandLineRunner autoSeedChatbotMetadata(TableMetadataRepository repo) {
+    public CommandLineRunner autoSeedChatbotMetadata(TableMetadataRepository repo, JdbcTemplate jdbcTemplate) {
         return args -> {
+            // Translate legacy vehicle types already stored in the database.
+            jdbcTemplate.update("UPDATE vehicles SET type = CASE type "
+                    + "WHEN 'Seater' THEN 'Ghế ngồi' "
+                    + "WHEN 'Sleeper' THEN 'Giường nằm' "
+                    + "ELSE type END "
+                    + "WHERE type IN ('Seater', 'Sleeper')");
+
+            // Chuyển toàn bộ trạng thái hết hạn giữ chỗ (EXPIRED / RELEASED) sang Đã hủy (CANCELLED)
+            jdbcTemplate.update("UPDATE bookings SET status = 'CANCELLED' WHERE status = 'EXPIRED'");
+            jdbcTemplate.update("UPDATE tickets SET status = 'CANCELLED' WHERE status = 'RELEASED'");
+
             if (repo.findAll().stream().noneMatch(m -> m.getTableName().equals("bookings"))) {
                 repo.save(TableMetadata.builder().tableName("customers")
                         .shortDescription(

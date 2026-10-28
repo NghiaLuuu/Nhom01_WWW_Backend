@@ -19,6 +19,10 @@ spring:
     redis:
       host: localhost
       port: 6379
+  sql:
+    init:
+      mode: always
+      platform: postgresql
 
   mail:
     host: smtp.gmail.com
@@ -42,3 +46,17 @@ spring.ai:
     api-key: your-openai-api-key
     chat:
       model: gpt-4o-mini
+
+server:
+  address: 0.0.0.0
+  port: 8080
+
+app:
+  cors:
+    # Override CORS_ALLOWED_ORIGIN_PATTERNS in production with the exact admin-web origins.
+    allowed-origin-patterns: "${CORS_ALLOWED_ORIGIN_PATTERNS:http://localhost:[*],http://127.0.0.1:[*],http://192.168.*.*:[*],http://10.*.*.*:[*],http://172.*.*.*:[*]}"
+
+booking:
+  cutoff:
+    web-minutes-before: 30 # Allowed range: 30 - 60
+    pos-minutes-before: 10 # Allowed range: 10 - 15
