@@ -38,7 +38,11 @@ jwt:
   refresh-expiration: 604800000
 
 spring.ai:
+  vectorstore:
+    # Keep PgVectorStore disabled until PostgreSQL has the pgvector extension and
+    # docker/postgres/migrations/002-create-vector-store.sql has been applied.
+    type: none
   openai:
-    api-key: your-openai-api-key
+    api-key: ${OPENAI_API_KEY}
     chat:
       model: gpt-4o-mini

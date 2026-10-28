@@ -1,0 +1,31 @@
+spring:
+  config:
+    activate:
+      on-profile: ai-vector
+
+spring.ai:
+  openai:
+    # The vector profile deliberately requires an environment-provided key.
+    api-key: ${OPENAI_API_KEY}
+    embedding:
+      model: text-embedding-3-small
+      dimensions: 1536
+  vectorstore:
+    type: pgvector
+    pgvector:
+      schema-name: public
+      table-name: vector_store
+      dimensions: 1536
+      distance-type: COSINE_DISTANCE
+      index-type: HNSW
+      initialize-schema: false
+      remove-existing-vector-store-table: false
+
+app:
+  ai-vector:
+    embedding:
+      collection-name: vector_store
+      provider: openai
+      model: text-embedding-3-small
+      dimensions: 1536
+      configuration-version: v1
