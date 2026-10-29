@@ -48,6 +48,21 @@ public class BookingServiceImpl implements BookingService {
             throw new CustomException("One or more seats not found", HttpStatus.BAD_REQUEST);
         }
 
+        List<Ticket> activeTickets = ticketRepository.findByBookingTripId(tripId);
+        boolean hasUnavailableSeat = activeTickets.stream()
+                .filter(ticket -> ticket.getSeat() != null)
+                .filter(ticket -> !"CANCELLED".equals(ticket.getStatus())
+                        && !"RELEASED".equals(ticket.getStatus())
+                        && ticket.getBooking() != null
+                        && !"CANCELLED".equals(ticket.getBooking().getStatus())
+                        && !"EXPIRED".equals(ticket.getBooking().getStatus())
+                        && !ticket.getBooking().isHoldExpired())
+                .anyMatch(ticket -> seatIds.contains(ticket.getSeat().getId()));
+        if (hasUnavailableSeat) {
+            throw new CustomException("One or more selected seats are no longer available",
+                    HttpStatus.CONFLICT);
+        }
+
         // Simple validation: Ensure seats belong to the trip's vehicle
         for (Seat seat : seats) {
             if (!seat.getVehicle().getId().equals(trip.getVehicle().getId())) {
@@ -82,6 +97,38 @@ public class BookingServiceImpl implements BookingService {
         savedBooking.setTickets(tickets);
 
         return savedBooking;
+    }
+
+    @Override
+    @Transactional
+    public Booking completeBooking(UUID customerId, Long tripId, List<Long> seatIds) {
+        Booking booking = createBooking(customerId, tripId, seatIds);
+        booking.markAsPaid();
+        booking.getTickets().forEach(Ticket::issue);
+        return bookingRepository.save(booking);
+    }
+
+    @Override
+    public List<Booking> getMyHistory(String email) {
+        return bookingRepository.findByCustomerEmailOrderByCreatedAtDesc(email);
+    }
+
+    @Override
+    public List<Booking> searchBookings(String phoneNumber, String ticketCode) {
+        return bookingRepository.findAll().stream()
+                .filter(booking -> phoneNumber == null || phoneNumber.isBlank()
+                        || phoneNumber.equals(booking.getCustomer().getPhoneNumber()))
+                .filter(booking -> ticketCode == null || ticketCode.isBlank()
+                        || String.valueOf(booking.getId()).equals(ticketCode)
+                        || (booking.getTickets() != null && booking.getTickets().stream()
+                        .anyMatch(ticket -> String.valueOf(ticket.getId()).equals(ticketCode))))
+                .toList();
+    }
+
+    @Override
+    public Booking getBookingDetails(Long id, String email) {
+        return bookingRepository.findByIdAndCustomerEmail(id, email)
+                .orElseThrow(() -> new CustomException("Booking not found", HttpStatus.NOT_FOUND));
     }
 
     @Override

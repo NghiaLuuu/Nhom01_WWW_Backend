@@ -5,6 +5,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import vn.edu.iuh.nhom01_www.common.dto.ApiResponse;
 import vn.edu.iuh.nhom01_www.seat.dto.SeatRequest;
+import vn.edu.iuh.nhom01_www.seat.dto.SeatAvailabilityDto;
 import vn.edu.iuh.nhom01_www.seat.model.Seat;
 import vn.edu.iuh.nhom01_www.seat.service.SeatService;
 import java.util.List;
@@ -18,6 +19,12 @@ public class SeatController {
     @GetMapping("/vehicle/{vehicleId}")
     public ResponseEntity<ApiResponse<List<Seat>>> getSeatsByVehicleId(@PathVariable Long vehicleId) {
         return ResponseEntity.ok(new ApiResponse<>(true, "Success", seatService.getSeatsByVehicleId(vehicleId)));
+    }
+
+    @GetMapping("/trip/{tripId}")
+    public ResponseEntity<ApiResponse<List<SeatAvailabilityDto>>> getSeatsByTripId(@PathVariable Long tripId) {
+        return ResponseEntity.ok(new ApiResponse<>(true, "Success",
+                seatService.getSeatAvailabilityByTripId(tripId)));
     }
     
     @PostMapping("/vehicle/{vehicleId}")

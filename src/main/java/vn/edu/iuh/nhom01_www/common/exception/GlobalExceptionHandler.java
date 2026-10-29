@@ -25,4 +25,9 @@ public class GlobalExceptionHandler {
                 .status(org.springframework.http.HttpStatus.BAD_REQUEST)
                 .body(new ApiResponse<>(false, message, null));
     }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ApiResponse<Object>> handleIllegalArgumentException(IllegalArgumentException ex) {
+        return ResponseEntity.badRequest().body(new ApiResponse<>(false, ex.getMessage(), null));
+    }
 }

@@ -80,8 +80,30 @@ public class UserActivityLog {
 
 ## 3. Checklist Triển Khai
 
-- [ ] Tạo entity `UserActivityLog` và repository tương ứng với các query thống kê JPQL/Native SQL.
-- [ ] Xây dựng DTO tiếp nhận sự kiện: `TrackEventDto`, `BatchTrackEventRequest`.
-- [ ] Xây dựng `AnalyticsService` hỗ trợ lưu log bất đồng bộ `@Async` và truy vấn dữ liệu báo cáo.
-- [ ] Xây dựng controller `AnalyticsTrackingController` (`/api/analytics/events`) và `AdminAnalyticsController` (`/api/admin/analytics`).
-- [ ] Viết test case và kiểm thử hiệu năng khi tiếp nhận lượng lớn event.
+- [x] Tạo entity `UserActivityLog` và repository tương ứng với các query thống kê JPQL/Native SQL.
+- [x] Xây dựng DTO tiếp nhận sự kiện: `TrackEventDto`, `BatchTrackEventRequest`.
+- [x] Xây dựng `AnalyticsService` hỗ trợ lưu log bất đồng bộ `@Async` và truy vấn dữ liệu báo cáo.
+- [x] Xây dựng controller `AnalyticsTrackingController` (`/api/analytics/events`) và `AdminAnalyticsController` (`/api/admin/analytics`).
+- [x] Viết thêm test case và kiểm thử hiệu năng khi tiếp nhận lượng lớn event.
+
+### 3.1. Backend contract đã triển khai
+
+- `POST /api/analytics/events/batch` nhận tối đa 100 event và trả HTTP `202 Accepted`.
+- Event bắt buộc có `sessionId`, `visitorId` và `actionType`; `actionType` chỉ nhận các giá trị đã định nghĩa trong `TrackEventDto`.
+- Analytics ingestion cho phép guest; email người dùng đăng nhập được lấy từ security context, không tin dữ liệu định danh do client gửi.
+- Các endpoint `/api/admin/analytics/**` yêu cầu authority `VIEW_STATISTICS`.
+- Các endpoint báo cáo yêu cầu `from` và `to` theo định dạng `yyyy-MM-dd`; khoảng thời gian tối đa 366 ngày.
+
+### 3.2. Frontend đã tích hợp
+
+- Tự tạo và lưu `visitorId` trong `localStorage`, `sessionId` trong `sessionStorage`.
+- Tự động ghi `PAGE_VIEW` và `DWELL_TIME` khi chuyển route hoặc rời trang.
+- Ghi funnel `SEARCH_TRIPS`, `VIEW_SEATS`, `SELECT_SEAT`, `FILL_INFO`, `BOOK_SUCCESS` và `ABANDON_BOOKING`.
+- Thêm màn hình `/admin/reports` để xem tổng quan, funnel, dwell time và xu hướng tìm kiếm.
+
+### 3.3. Kiểm thử đã thực hiện
+
+- Backend: `mvnw.cmd test` thành công, 1 test không lỗi.
+- Analytics: `AnalyticsTrackingPerformanceTests` kiểm tra validation, batch 100 event và 100 batch đồng thời; kết quả đo được p50 13ms, p95 15ms, p99 16ms trong môi trường test (p95 < 50ms).
+- Frontend: `npm run build` thành công với TypeScript và Vite.
+- Booking thực tế lưu `bookings` và `tickets`; màn hình tra cứu hỗ trợ lọc theo tuyến, ngày và mã chuyến.

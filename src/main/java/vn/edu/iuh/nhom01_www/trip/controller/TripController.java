@@ -12,6 +12,8 @@ import vn.edu.iuh.nhom01_www.trip.service.TripService;
 
 import java.util.List;
 import java.util.Map;
+import vn.edu.iuh.nhom01_www.seat.dto.SeatAvailabilityDto;
+import vn.edu.iuh.nhom01_www.seat.service.SeatService;
 
 @RestController
 @RequestMapping("/api/trips")
@@ -19,6 +21,7 @@ import java.util.Map;
 public class TripController {
 
     private final TripService tripService;
+    private final SeatService seatService;
 
     @GetMapping
     @PreAuthorize("hasAuthority('TRIP_MANAGE')")
@@ -37,6 +40,12 @@ public class TripController {
     @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<Trip>> getTripById(@PathVariable Long id) {
         return ResponseEntity.ok(new ApiResponse<>(true, "Success", tripService.getTripById(id)));
+    }
+
+    @GetMapping("/{id}/seats")
+    public ResponseEntity<ApiResponse<List<SeatAvailabilityDto>>> getTripSeats(@PathVariable Long id) {
+        return ResponseEntity.ok(new ApiResponse<>(true, "Success",
+                seatService.getSeatAvailabilityByTripId(id)));
     }
 
     @PostMapping

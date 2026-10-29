@@ -12,6 +12,8 @@ import vn.edu.iuh.nhom01_www.trip.repository.TripRepository;
 import vn.edu.iuh.nhom01_www.trip.service.TripService;
 
 import java.util.List;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 @Service
 @RequiredArgsConstructor
@@ -41,14 +43,27 @@ public class TripServiceImpl implements TripService {
 
     @Override
     public List<Trip> searchTrips(String departureLocation, String arrivalLocation, String date) {
-        // If all parameters are empty, return all trips
-        if ((departureLocation == null || departureLocation.isBlank())
-                && (arrivalLocation == null || arrivalLocation.isBlank())
-                && (date == null || date.isBlank())) {
-            return tripRepository.findAll();
+        String departure = normalize(departureLocation);
+        String arrival = normalize(arrivalLocation);
+        String searchDate = normalize(date);
+
+        LocalDateTime from = null;
+        LocalDateTime to = null;
+        if (searchDate != null) {
+            try {
+                LocalDate localDate = LocalDate.parse(searchDate);
+                from = localDate.atStartOfDay();
+                to = localDate.plusDays(1).atStartOfDay();
+            } catch (java.time.format.DateTimeParseException exception) {
+                throw new CustomException("Date must use yyyy-MM-dd format", HttpStatus.BAD_REQUEST);
+            }
         }
-        // TODO: Implement filtered search query
-        return tripRepository.findAll();
+
+        return tripRepository.searchTrips(departure, arrival, from, to);
+    }
+
+    private String normalize(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     @Override

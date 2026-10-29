@@ -33,7 +33,9 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/trips/search").permitAll()
+                        .requestMatchers("/api/trips/*/seats").permitAll()
                         .requestMatchers("/api/routes").permitAll()
+                        .requestMatchers("/api/analytics/events/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 .exceptionHandling(exceptions -> exceptions
