@@ -9,7 +9,9 @@ import vn.edu.iuh.nhom01_www.route.model.Route;
 import vn.edu.iuh.nhom01_www.route.repository.RouteRepository;
 import vn.edu.iuh.nhom01_www.route.service.RouteService;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -20,6 +22,24 @@ public class RouteServiceImpl implements RouteService {
     @Override
     public List<Route> getAllRoutes() {
         return routeRepository.findAll();
+    }
+
+    @Override
+    public List<Route> getActiveRoutes() {
+        return routeRepository.findByStatusTrue();
+    }
+
+    @Override
+    public List<Route> searchRoutes(String departure, String arrival) {
+        return routeRepository.searchRoutes(departure, arrival);
+    }
+
+    @Override
+    public Map<String, List<String>> getLocations() {
+        Map<String, List<String>> locations = new HashMap<>();
+        locations.put("departures", routeRepository.findDistinctDepartureLocations());
+        locations.put("arrivals", routeRepository.findDistinctArrivalLocations());
+        return locations;
     }
 
     @Override
