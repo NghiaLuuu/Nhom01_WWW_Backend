@@ -25,4 +25,10 @@ public class ChatbotController {
         }
         return ResponseEntity.ok(new ApiResponse<>(true, "Success", chatbotService.ask(request, currentUserEmail)));
     }
+
+    @PostMapping("/ingest")
+    @Auditable(action = "CHATBOT_INGEST_VECTORS", entityName = "Chatbot")
+    public ResponseEntity<ApiResponse<Object>> ingest() {
+        return ResponseEntity.ok(new ApiResponse<>(true, "Đã hoàn thành nạp vector thành công", chatbotService.ingestAll()));
+    }
 }

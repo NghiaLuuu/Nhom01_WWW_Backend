@@ -6,16 +6,22 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import vn.edu.iuh.nhom01_www.aivector.VectorIngestionReport;
+import vn.edu.iuh.nhom01_www.aivector.VectorIngestionService;
+import vn.edu.iuh.nhom01_www.aivector.VectorSearchRequest;
+import vn.edu.iuh.nhom01_www.aivector.VectorSearchResult;
+import vn.edu.iuh.nhom01_www.aivector.VectorSearchService;
 import vn.edu.iuh.nhom01_www.chatbot.dto.ChatbotRequest;
-import vn.edu.iuh.nhom01_www.chatbot.model.TableMetadata;
-import vn.edu.iuh.nhom01_www.chatbot.repository.TableMetadataRepository;
-import vn.edu.iuh.nhom01_www.common.exception.CustomException;
-import org.springframework.http.HttpStatus;
+import vn.edu.iuh.nhom01_www.route.model.Route;
+import vn.edu.iuh.nhom01_www.route.repository.RouteRepository;
+import vn.edu.iuh.nhom01_www.trip.model.Trip;
+import vn.edu.iuh.nhom01_www.trip.repository.TripRepository;
 
-import java.util.List;
-import java.util.Map;
+import java.text.NumberFormat;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -24,189 +30,197 @@ import java.util.stream.Collectors;
 public class ChatbotService {
 
     private final ChatModel chatModel;
-    private final TableMetadataRepository tableMetadataRepository;
-    private final JdbcTemplate jdbcTemplate;
+    private final Optional<VectorSearchService> vectorSearchService;
+    private final Optional<VectorIngestionService> vectorIngestionService;
+    private final TripRepository tripRepository;
+    private final RouteRepository routeRepository;
+
     private final ObjectMapper objectMapper = new ObjectMapper()
             .registerModule(new JavaTimeModule())
             .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
-            .setTimeZone(java.util.TimeZone.getTimeZone("Asia/Ho_Chi_Minh"));
+            .setTimeZone(TimeZone.getTimeZone("Asia/Ho_Chi_Minh"));
 
-    public Object ask(ChatbotRequest request, String currentUserEmail) {
+    private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm 'ngày' dd/MM/yyyy");
+    private static final NumberFormat CURRENCY_FORMATTER = NumberFormat.getInstance(new Locale("vi", "VN"));
+
+    public Map<String, Object> ask(ChatbotRequest request, String currentUserEmail) {
         String userQuestion = request.getQuestion();
-        
+        if (userQuestion == null || userQuestion.trim().isEmpty()) {
+            return Map.of("answer", "Xin chào! Bạn cần tìm chuyến xe hoặc thông tin vé đi đâu ạ?");
+        }
+        userQuestion = userQuestion.trim();
+
         String historyContext = "";
         if (request.getHistory() != null && !request.getHistory().isEmpty()) {
             historyContext = request.getHistory().stream()
-                    .map(msg -> (msg.getRole().equalsIgnoreCase("user") ? "User: " : "Bot: ") + msg.getContent())
+                    .map(msg -> (msg.getRole() != null && msg.getRole().equalsIgnoreCase("user") ? "Khách: " : "Trợ lý: ") + msg.getContent())
                     .collect(Collectors.joining("\n"));
         }
-        
-        String fullContext = historyContext.isEmpty() ?
-                "Người dùng hỏi: '" + userQuestion + "'" :
-                "Lịch sử chat:\n" + historyContext + "\nNgười dùng hỏi: '" + userQuestion + "'";
 
-        // Stage 0: Pre-execution Guardrail
-        String guardrailPrompt = String.format(
-                "Kiểm tra xem câu hỏi sau có chứa nội dung bậy bạ, nhạy cảm, độc hại, hoặc yêu cầu lấy thông tin cá nhân/nhạy cảm của người khác không. " +
-                "Câu hỏi: '%s'. QUAN TRỌNG: Nếu an toàn, BẮT BUỘC CHỈ trả về duy nhất chữ 'SAFE' (không thêm bất kỳ từ nào khác, không giải thích). Nếu vi phạm, hãy trả lời một câu từ chối lịch sự.",
-                userQuestion);
-        String guardrailResult = chatModel.call(guardrailPrompt).trim();
-        log.info("Stage 0 - Guardrail Result: {}", guardrailResult);
-        
-        String cleanResult = guardrailResult.replaceAll("^[\"'.`]+|[\"'.`]+$", "").trim();
-        if (!"SAFE".equalsIgnoreCase(cleanResult) && !guardrailResult.toUpperCase().contains("SAFE")) {
-            return Map.of("answer", guardrailResult);
+        // Stage 0: Guardrail check
+        if (isMaliciousQuery(userQuestion)) {
+            return Map.of("answer", "Xin lỗi, tôi chỉ có thể hỗ trợ các thông tin liên quan đến tra cứu chuyến xe, giá vé và hướng dẫn đặt vé.");
         }
 
-        // 1. Fetch Metadata
-        List<TableMetadata> allMetadata = tableMetadataRepository.findAll();
-        if (allMetadata.isEmpty()) {
-            return Map.of("answer", "Hệ thống chưa được cấu hình Metadata để trả lời câu hỏi.");
+        // Stage 1: Greeting detection
+        if (isGreeting(userQuestion) && historyContext.isEmpty()) {
+            return Map.of("answer",
+                    "**Xin chào!** Em là trợ lý AI của hệ thống vé xe **VEXE**.\n\n" +
+                    "Em có thể giúp anh/chị:\n" +
+                    "- 🔍 **Tra cứu chuyến xe**: *\"Có xe nào từ Sài Gòn đi Đà Lạt tối nay không?\"*\n" +
+                    "- 💰 **Tham khảo giá vé & loại xe**: *\"Xe Limousine đi Nha Trang giá bao nhiêu?\"*\n" +
+                    "- 🎫 **Hỗ trợ đặt vé**: *\"Tôi muốn đặt vé chuyến 8h sáng mai đi Vũng Tàu\"*\n\n" +
+                    "Anh/chị đang có kế hoạch đi đâu, hãy nhắn cho em biết nhé!");
         }
 
-        String metadataContext = allMetadata.stream()
-                .map(m -> "- Bảng '" + m.getTableName() + "': " + m.getShortDescription())
-                .collect(Collectors.joining("\n"));
-
-        // Stage 1: Routing
-        String routingPrompt = String.format(
-                "%s\n" +
-                "Dưới đây là các bảng dữ liệu trong hệ thống:\n" +
-                "%s\n" +
-                "Dựa vào ngữ cảnh trên, hãy cho biết cần truy vấn dữ liệu từ những bảng nào để trả lời câu hỏi cuối cùng? " +
-                "Nếu câu hỏi chỉ là lời chào hỏi giao tiếp (như hello, xin chào, bạn là ai, hey) hoặc không liên quan đến tra cứu dữ liệu, BẮT BUỘC trả về duy nhất chữ 'NONE'.\n" +
-                "Ngược lại, hãy trả lời CHỈ BẰNG TÊN CÁC BẢNG cách nhau bằng dấu phẩy, không giải thích gì thêm.",
-                fullContext, metadataContext);
-        
-        String chosenTablesStr = chatModel.call(routingPrompt).trim();
-        log.info("Stage 1 - Chosen Tables: {}", chosenTablesStr);
-
-        String dbResultJson = "[]";
-        boolean sqlSuccess = false;
-        String rawSql = "";
-        String lastError = "";
-
-        if ("NONE".equalsIgnoreCase(chosenTablesStr.replaceAll("^[\"'.`]+|[\"'.`]+$", "").trim()) || chosenTablesStr.toUpperCase().contains("NONE")) {
-            sqlSuccess = true;
-            log.info("Stage 1 - Detected greeting or non-query. Skipping SQL execution.");
-        } else {
-
-        // Prepare schema for SQL Generation
-        List<String> validTables = allMetadata.stream().map(m -> m.getTableName()).collect(Collectors.toList());
-        List<String> selectedTables = java.util.Arrays.stream(chosenTablesStr.split(","))
-                .map(s -> s.trim())
-                .filter(validTables::contains)
-                .collect(Collectors.toList());
-
-        String schemaContext = "";
-        if (!selectedTables.isEmpty()) {
-            String inClause = selectedTables.stream().map(t -> "'" + t + "'").collect(Collectors.joining(","));
-            String schemaSql = "SELECT table_name, column_name, data_type " +
-                               "FROM information_schema.columns " +
-                               "WHERE table_schema = 'public' AND table_name IN (" + inClause + ")";
+        // Stage 2: RAG - Vector Search in PostgreSQL pgvector
+        List<VectorSearchResult> searchResults = Collections.emptyList();
+        if (vectorSearchService.isPresent()) {
             try {
-                List<Map<String, Object>> columnsList = jdbcTemplate.queryForList(schemaSql);
-                Map<String, List<Map<String, Object>>> groupedCols = columnsList.stream()
-                    .collect(Collectors.groupingBy(row -> (String) row.get("table_name")));
-
-                schemaContext = groupedCols.entrySet().stream().map(entry -> {
-                    String tableName = entry.getKey();
-                    String cols = entry.getValue().stream()
-                        .map(row -> row.get("column_name") + " (" + row.get("data_type") + ")")
-                        .collect(Collectors.joining(", "));
-                    
-                    String desc = allMetadata.stream()
-                            .filter(m -> m.getTableName().equals(tableName))
-                            .findFirst()
-                            .map(m -> m.getShortDescription())
-                            .orElse("");
-                    return "Table '" + tableName + "' - Description: " + desc + "\nColumns: " + cols;
-                }).collect(Collectors.joining("\n\n"));
-            } catch(Exception e) {
-                log.error("Failed to fetch schema dynamically", e);
-            }
-        }
-
-        if (schemaContext.isEmpty()) {
-            return Map.of("answer", "Xin lỗi, tôi không tìm thấy dữ liệu phù hợp để trả lời câu hỏi của bạn.");
-        }
-
-        // Stage 2 & 3: SQL Generation & Execution Loop
-        for (int i = 1; i <= 5; i++) {
-            log.info("Stage 2 & 3 - Attempt {}/5", i);
-            String sqlPrompt;
-            if (i == 1) {
-                sqlPrompt = String.format(
-                        "Dựa vào schema CSDL PostgreSQL sau:\n" +
-                        "%s\n\n" +
-                        "THÔNG TIN HỆ THỐNG: Ngày giờ hiện tại là %s. Nếu người dùng chỉ nói ngày/tháng (ví dụ: ngày 15/08) hoặc nói 'hôm nay', hãy dùng ngày giờ này làm mốc.\n\n" +
-                        "Tối hậu thư bảo mật: KHÔNG ĐƯỢC tạo truy vấn lấy dữ liệu cá nhân (tên, email, sđt, mật khẩu) của người dùng khác. " +
-                        "Chỉ được tra cứu các thông tin PUBLIC (tuyến đường, chuyến xe, giá vé, lịch trình) hoặc thông tin cá nhân của CHÍNH người dùng hiện tại (Email: %s). " +
-                        "Nếu câu hỏi yêu cầu lấy thông tin riêng tư của người khác, hãy trả về chính xác câu lệnh: SELECT 'VIOLATION' as error;\n\n" +
-                        "QUAN TRỌNG: Khi tìm kiếm theo chuỗi (như tên địa điểm, tên người), KHÔNG ĐƯỢC DÙNG toán tử '=', MÀ BẮT BUỘC phải dùng toán tử ILIKE với ký tự đại diện '%%' ở hai đầu để tìm kiếm tương đối và không phân biệt hoa thường. Ví dụ: ILIKE '%%Đà Nẵng%%' hoặc ILIKE '%%Huế%%'.\n\n" +
-                        "MẸO TỐI ƯU TRUY VẤN: Ưu tiên dùng `SELECT *` hoặc SELECT các cột có ích thay vì dùng các hàm gom/cắt gọt dữ liệu làm mất thông tin (như DATE_TRUNC, COUNT). Hãy để phần đếm/tổng hợp cho AI tự xử lý ở bước sinh ngôn ngữ tự nhiên. Lưu ý cột 'status' của bảng trips thường mang giá trị 'PENDING' (đang mở bán/chờ chạy) hoặc 'COMPLETED' (đã chạy xong). Tuyệt đối không tự ý lọc status = 'ACTIVE'.\n" +
-                        "MẸO KHI TRUY VẤN ĐẶT VÉ: Nếu người dùng hỏi về lịch sử đặt vé hoặc vé đã đặt, BẮT BUỘC phải dùng lệnh JOIN để kết nối các bảng `bookings`, `tickets`, `trips`, và `routes` nhằm lấy ra đầy đủ thông tin nhất (nơi đi, nơi đến, thời gian khởi hành, tổng tiền).\n\n" +
-                        "Dựa vào ngữ cảnh sau:\n%s\n\n" +
-                        "Hãy viết MỘT câu lệnh SQL SELECT duy nhất để trả lời câu hỏi cuối cùng của người dùng.\n" +
-                        "LƯU Ý QUAN TRỌNG: Chỉ trả về câu lệnh SQL thô, không dùng code block, không giải thích.",
-                        schemaContext, java.time.LocalDateTime.now().toString(), currentUserEmail, fullContext);
-            } else {
-                sqlPrompt = String.format(
-                        "Câu lệnh SQL trước đó bạn viết: '%s' đã gây ra lỗi Database sau: '%s'.\n" +
-                        "Dựa vào schema:\n%s\n\n" +
-                        "Hãy sửa lại câu lệnh SQL cho đúng. CHỈ trả về câu lệnh SQL thô, không dùng code block, không giải thích.",
-                        rawSql, lastError, schemaContext);
-            }
-
-            rawSql = chatModel.call(sqlPrompt).trim();
-            rawSql = rawSql.replaceAll("^`sql\\s*", "").replaceAll("^`\\s*", "").replaceAll("`$", "").trim();
-            log.info("Stage 2 - Generated SQL: {}", rawSql);
-
-            // Security Validation
-            if (!rawSql.toUpperCase().startsWith("SELECT")) {
-                throw new CustomException("Lệnh SQL sinh ra không hợp lệ (Không phải lệnh SELECT).", HttpStatus.BAD_REQUEST);
-            }
-            if (rawSql.toUpperCase().contains("'VIOLATION'")) {
-                return Map.of("answer", "Xin lỗi, tôi không thể cung cấp thông tin cá nhân của người khác vì lý do bảo mật.");
-            }
-            String upperSql = rawSql.toUpperCase();
-            if (upperSql.contains("INSERT ") || upperSql.contains("UPDATE ") || upperSql.contains("DELETE ") 
-                    || upperSql.contains("DROP ") || upperSql.contains("ALTER ")) {
-                throw new CustomException("Phát hiện lệnh SQL nguy hiểm!", HttpStatus.FORBIDDEN);
-            }
-
-            try {
-                List<Map<String, Object>> resultList = jdbcTemplate.queryForList(rawSql);
-                dbResultJson = objectMapper.writeValueAsString(resultList);
-                log.info("Stage 3 - Execution Result: {}", dbResultJson);
-                sqlSuccess = true;
-                break; // Break the loop on success
+                VectorSearchRequest searchRequest = new VectorSearchRequest(userQuestion, 6, 0.30d, null, null);
+                searchResults = vectorSearchService.get().search(searchRequest);
+                log.info("RAG: Vector search returned {} results for query: '{}'", searchResults.size(), userQuestion);
             } catch (Exception e) {
-                lastError = e.getMessage();
-                log.error("Stage 3 - SQL Execution Error on attempt {}: {}", i, lastError);
+                log.warn("Vector search encountered an issue, falling back to database query if needed: {}", e.getMessage());
             }
         }
-        
-        } // End of else block for SQL execution
 
-        if (!sqlSuccess) {
-            return Map.of("answer", "Xin lỗi, tôi đang gặp khó khăn khi tra cứu dữ liệu cho câu hỏi này. Vui lòng thử lại với cách hỏi khác.");
+        // Stage 3: Context Enrichment from Domain Data
+        String ragContext = buildRagContext(searchResults, userQuestion);
+
+        // Stage 4: Natural Language Generation (ChatModel with Spring AI prompt engineering)
+        String nlgPrompt = buildNlgPrompt(userQuestion, historyContext, ragContext, currentUserEmail);
+        log.debug("RAG: Generated prompt length: {}", nlgPrompt.length());
+
+        String finalAnswer;
+        try {
+            finalAnswer = chatModel.call(nlgPrompt);
+        } catch (Exception e) {
+            log.error("Failed to generate answer from ChatModel", e);
+            finalAnswer = "Xin lỗi, hệ thống AI đang bận xử lý hoặc kết nối bị gián đoạn. Anh/chị vui lòng thử lại sau giây lát ạ.";
         }
 
-        // Stage 4: NLG (Natural Language Generation)
-        String nlgPrompt = String.format(
-                "Bạn là một nhân viên chăm sóc khách hàng thân thiện của hãng xe khách.\n" +
-                "Khách hàng hỏi: '%s'\n" +
-                "Dữ liệu tra cứu được từ hệ thống (định dạng JSON): %s\n\n" +
-                "Dựa vào dữ liệu trên, hãy tóm tắt và trả lời khách hàng bằng tiếng Việt một cách tự nhiên. " +
-                "Nếu dữ liệu JSON rỗng ([]): nếu khách hàng đang hỏi tra cứu dữ liệu thì báo là không tìm thấy thông tin; còn nếu khách hàng chỉ đang chào hỏi giao tiếp (như hello, xin chào) thì hãy đáp lại lịch sự và hỏi xem bạn có thể giúp gì.\n" +
-                "QUAN TRỌNG: Nếu khách hàng có ý định muốn ĐẶT VÉ (mua vé, chọn ghế, thanh toán) cho một chuyến xe cụ thể và bạn tìm thấy 'id' của chuyến xe đó trong JSON, " +
-                "hãy thêm chính xác thẻ [[BOOK_TRIP_ID:<id>]] vào CUỐI câu trả lời của bạn. Thay <id> bằng mã id của chuyến xe.",
-                userQuestion, dbResultJson);
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("answer", finalAnswer);
+        response.put("matchedCount", searchResults.size());
+        return response;
+    }
 
-        String finalAnswer = chatModel.call(nlgPrompt);
-        log.info("Stage 4 - Final Answer: {}", finalAnswer);
+    public VectorIngestionReport ingestAll() {
+        if (vectorIngestionService.isEmpty()) {
+            throw new IllegalStateException("VectorIngestionService is not available (ai-vector profile not active)");
+        }
+        return vectorIngestionService.get().ingestAll();
+    }
 
-        return Map.of("answer", finalAnswer);
+    private boolean isMaliciousQuery(String question) {
+        String lower = question.toLowerCase(Locale.ROOT);
+        return lower.contains("drop table") || lower.contains("delete from") || lower.contains("select password")
+                || lower.contains("thông tin cá nhân của người khác") || lower.contains("mật khẩu của admin");
+    }
+
+    private boolean isGreeting(String question) {
+        String lower = question.toLowerCase(Locale.ROOT).trim();
+        List<String> greetings = List.of(
+                "xin chào", "chào bạn", "chào em", "chào bot", "chào", "hello", "hi", "hey",
+                "bạn là ai", "ai đó", "alo", "start", "bắt đầu"
+        );
+        return greetings.stream().anyMatch(g -> lower.equals(g) || lower.startsWith(g + " ") || lower.endsWith(" " + g));
+    }
+
+    private String buildRagContext(List<VectorSearchResult> searchResults, String userQuestion) {
+        if (searchResults.isEmpty()) {
+            return "Không tìm thấy dữ liệu vector phù hợp trực tiếp với từ khóa.";
+        }
+
+        StringBuilder context = new StringBuilder();
+        Set<Long> processedTripIds = new HashSet<>();
+        Set<Long> processedRouteIds = new HashSet<>();
+
+        for (VectorSearchResult result : searchResults) {
+            Map<String, Object> meta = result.metadata();
+            String sourceType = meta != null && meta.get("sourceType") != null ? meta.get("sourceType").toString() : "";
+
+            if ("trip".equalsIgnoreCase(sourceType) && meta.get("tripId") != null) {
+                try {
+                    Long tripId = Long.parseLong(meta.get("tripId").toString());
+                    if (processedTripIds.add(tripId)) {
+                        tripRepository.findById(tripId).ifPresent(trip -> {
+                            context.append(formatTripDetails(trip)).append("\n---\n");
+                        });
+                    }
+                } catch (Exception ignored) {}
+            } else if ("route".equalsIgnoreCase(sourceType) && meta.get("routeId") != null) {
+                try {
+                    Long routeId = Long.parseLong(meta.get("routeId").toString());
+                    if (processedRouteIds.add(routeId)) {
+                        routeRepository.findById(routeId).ifPresent(route -> {
+                            context.append(formatRouteDetails(route)).append("\n---\n");
+                        });
+                    }
+                } catch (Exception ignored) {}
+            } else if (result.content() != null && !result.content().isBlank()) {
+                context.append(result.content().trim()).append("\n---\n");
+            }
+        }
+
+        return context.length() > 0 ? context.toString() : "Dữ liệu tra cứu vector trống.";
+    }
+
+    private String formatTripDetails(Trip trip) {
+        String departure = trip.getRoute() != null ? trip.getRoute().getDepartureLocation() : "N/A";
+        String arrival = trip.getRoute() != null ? trip.getRoute().getArrivalLocation() : "N/A";
+        String vehicleType = trip.getVehicle() != null ? trip.getVehicle().getType() : "Tiêu chuẩn";
+        int capacity = trip.getVehicle() != null ? trip.getVehicle().getCapacity() : 0;
+        String priceStr = trip.getPrice() != null ? CURRENCY_FORMATTER.format(trip.getPrice()) + " VNĐ" : "Đang cập nhật";
+        String timeStr = trip.getDepartureTime() != null ? TIME_FORMATTER.format(trip.getDepartureTime()) : "Chưa có giờ";
+
+        return String.format(
+                "[CHUYẾN XE ID: %d]\n" +
+                "- Tuyến đường: %s -> %s\n" +
+                "- Khởi hành: %s\n" +
+                "- Loại xe: %s (%d chỗ/giường)\n" +
+                "- Giá vé: %s\n" +
+                "- Trạng thái: %s",
+                trip.getId(), departure, arrival, timeStr, vehicleType, capacity, priceStr, trip.getStatus()
+        );
+    }
+
+    private String formatRouteDetails(Route route) {
+        String basePriceStr = route.getBasePrice() != null ? CURRENCY_FORMATTER.format(route.getBasePrice()) + " VNĐ" : "N/A";
+        return String.format(
+                "[TUYẾN ĐƯỜNG ID: %d]\n" +
+                "- Điểm đi: %s | Điểm đến: %s\n" +
+                "- Khoảng cách: %s km | Thời gian dự kiến: %s phút\n" +
+                "- Giá vé cơ bản: %s",
+                route.getId(), route.getDepartureLocation(), route.getArrivalLocation(),
+                route.getDistanceKm() != null ? route.getDistanceKm().toPlainString() : "N/A",
+                route.getDurationMinutes() != null ? route.getDurationMinutes().toString() : "N/A",
+                basePriceStr
+        );
+    }
+
+    private String buildNlgPrompt(String userQuestion, String historyContext, String ragContext, String currentUserEmail) {
+        String nowStr = LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm 'ngày' dd/MM/yyyy"));
+
+        return "Bạn là trợ lý ảo AI thông minh, chu đáo và chuyên nghiệp của nền tảng vé xe khách VEXE.\n" +
+                "Thời gian hiện tại: " + nowStr + ".\n" +
+                "Người dùng đang chat: " + (currentUserEmail != null ? currentUserEmail : "Khách vãng lai") + ".\n\n" +
+                "HƯỚNG DẪN TRẢ LỜI QUAN TRỌNG:\n" +
+                "1. Luôn chào hỏi và trả lời bằng tiếng Việt lịch sự, tự nhiên, ân cần như nhân viên tư vấn du lịch thực thụ.\n" +
+                "2. Sử dụng thông tin từ [DỮ LIỆU CHUYẾN XE TRA CỨU ĐƯỢC] bên dưới để trả lời chính xác, trung thực. Tuyệt đối không bịa đặt chuyến xe hoặc thông tin sai lệch.\n" +
+                "3. Định dạng câu trả lời đẹp mắt bằng Markdown:\n" +
+                "   - In đậm các điểm quan trọng: tuyến đường, giờ khởi hành, giá vé (ví dụ: **250.000 VNĐ**), loại xe.\n" +
+                "   - Dùng danh sách gạch đầu dòng để khách hàng dễ so sánh các chuyến.\n" +
+                "   - Tránh câu trả lời khô khan, cộc lốc hoặc hiển thị định dạng code/JSON.\n" +
+                "4. NẾU khách hàng có ý định muốn ĐẶT VÉ (ví dụ: 'đặt chuyến này', 'mua vé chuyến 8h', 'tôi muốn đi chuyến đầu tiên'):\n" +
+                "   - Xác nhận thông tin chuyến và BẮT BUỘC thêm chính xác thẻ [[BOOK_TRIP_ID:<id>]] vào CUỐI câu trả lời (thay <id> bằng mã ID chuyến xe trong dữ liệu tra cứu) để giao diện hiển thị nút Đặt vé nhanh.\n" +
+                "5. Nếu không tìm thấy chuyến xe phù hợp trong dữ liệu tra cứu:\n" +
+                "   - Báo lịch sự là hiện chưa có chuyến xe khớp chính xác với thời gian/tuyến đường đó.\n" +
+                "   - Gợi ý khách tham khảo các tuyến phổ biến như: Sài Gòn - Đà Lạt, Hà Nội - Sapa, Đà Nẵng - Huế, Sài Gòn - Nha Trang.\n\n" +
+                "[LỊCH SỬ HỘI THOẠI]:\n" + (historyContext.isBlank() ? "Chưa có lịch sử." : historyContext) + "\n\n" +
+                "[DỮ LIỆU CHUYẾN XE TRA CỨU ĐƯỢC TỪ PGVECTOR]:\n" + ragContext + "\n\n" +
+                "[CÂU HỎI CỦA KHÁCH HÀNG]:\n" + userQuestion + "\n\n" +
+                "Hãy trả lời khách hàng:";
     }
 }

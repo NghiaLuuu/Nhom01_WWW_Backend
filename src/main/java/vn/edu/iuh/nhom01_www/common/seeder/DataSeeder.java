@@ -57,6 +57,7 @@ public class DataSeeder implements CommandLineRunner {
         private final TicketRepository ticketRepository;
         private final TableMetadataRepository tableMetadataRepository;
         private final PasswordEncoder passwordEncoder;
+        private final java.util.Optional<vn.edu.iuh.nhom01_www.aivector.VectorIngestionService> vectorIngestionService;
 
         private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
@@ -324,6 +325,17 @@ public class DataSeeder implements CommandLineRunner {
                                 .schemaDefinition(
                                                 "CREATE TABLE tickets (id BIGINT PRIMARY KEY, booking_id BIGINT, seat_id BIGINT, price DECIMAL(38,2), status VARCHAR(255));")
                                 .build());
+
+                // 8. Vector Ingestion
+                vectorIngestionService.ifPresent(service -> {
+                        log.info("8. Đang nạp toàn bộ dữ liệu mẫu vào pgvector (VectorStore)...");
+                        try {
+                                service.ingestAll();
+                                log.info("Nạp dữ liệu vector vào pgvector thành công!");
+                        } catch (Exception e) {
+                                log.warn("Không thể nạp dữ liệu vector trong seeder: {}", e.getMessage());
+                        }
+                });
         }
 
         private Vehicle createVehicle(String licensePlate, String type, int capacity) {

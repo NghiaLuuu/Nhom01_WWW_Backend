@@ -4,8 +4,12 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
+import org.springframework.jdbc.core.JdbcTemplate;
+import vn.edu.iuh.nhom01_www.aivector.VectorIngestionService;
 import vn.edu.iuh.nhom01_www.chatbot.model.TableMetadata;
 import vn.edu.iuh.nhom01_www.chatbot.repository.TableMetadataRepository;
+
+import java.util.Optional;
 
 @SpringBootApplication
 public class Nhom01WwwApplication {
@@ -19,23 +23,36 @@ public class Nhom01WwwApplication {
         return args -> {
             if (repo.findAll().stream().noneMatch(m -> m.getTableName().equals("bookings"))) {
                 repo.save(TableMetadata.builder().tableName("customers")
-                        .shortDescription(
-                                "Chứa thông tin khách hàng, dùng để đối chiếu email người dùng đang đăng nhập")
-                        .schemaDefinition(
-                                "CREATE TABLE customers (id UUID PRIMARY KEY, email VARCHAR(255), full_name VARCHAR(255), phone_number VARCHAR(255));")
+                        .shortDescription("Chứa thông tin khách hàng, dùng để đối chiếu email người dùng đang đăng nhập")
+                        .schemaDefinition("CREATE TABLE customers (id UUID PRIMARY KEY, email VARCHAR(255), full_name VARCHAR(255), phone_number VARCHAR(255));")
                         .build());
                 repo.save(TableMetadata.builder().tableName("bookings")
                         .shortDescription("Chứa lịch sử đặt vé (hóa đơn) của khách hàng (customer_id)")
-                        .schemaDefinition(
-                                "CREATE TABLE bookings (id BIGINT PRIMARY KEY, customer_id UUID, trip_id BIGINT, status VARCHAR(255), total_price DECIMAL(38,2), created_at TIMESTAMP);")
+                        .schemaDefinition("CREATE TABLE bookings (id BIGINT PRIMARY KEY, customer_id UUID, trip_id BIGINT, status VARCHAR(255), total_price DECIMAL(38,2), created_at TIMESTAMP);")
                         .build());
                 repo.save(TableMetadata.builder().tableName("tickets")
                         .shortDescription("Chứa thông tin chi tiết từng vé (ghế ngồi) thuộc về một booking")
-                        .schemaDefinition(
-                                "CREATE TABLE tickets (id BIGINT PRIMARY KEY, booking_id BIGINT, seat_id BIGINT, price DECIMAL(38,2), status VARCHAR(255));")
+                        .schemaDefinition("CREATE TABLE tickets (id BIGINT PRIMARY KEY, booking_id BIGINT, seat_id BIGINT, price DECIMAL(38,2), status VARCHAR(255));")
                         .build());
-                System.out.println(
-                        "--- ĐÃ TỰ ĐỘNG BỔ SUNG TABLE METADATA (BOOKINGS, CUSTOMERS, TICKETS) CHO CHATBOT ---");
+                System.out.println("--- ĐÃ TỰ ĐỘNG BỔ SUNG TABLE METADATA (BOOKINGS, CUSTOMERS, TICKETS) CHO CHATBOT ---");
+            }
+        };
+    }
+
+    @Bean
+    public CommandLineRunner autoIngestVectors(Optional<VectorIngestionService> ingestionService, JdbcTemplate jdbcTemplate) {
+        return args -> {
+            if (ingestionService.isPresent()) {
+                try {
+                    Integer count = jdbcTemplate.queryForObject("SELECT count(*) FROM vector_store", Integer.class);
+                    if (count == null || count == 0) {
+                        System.out.println("--- BẢNG VECTOR_STORE ĐANG TRỐNG, TỰ ĐỘNG CHẠY INGESTALL()... ---");
+                        ingestionService.get().ingestAll();
+                        System.out.println("--- TỰ ĐỘNG INGEST DỮ LIỆU VECTOR VÀO POSTGRESQL PGVECTOR THÀNH CÔNG! ---");
+                    }
+                } catch (Exception e) {
+                    System.err.println("--- CHƯA THỂ TỰ ĐỘNG INGEST VECTOR: " + e.getMessage() + " ---");
+                }
             }
         };
     }

@@ -5,8 +5,6 @@ spring:
 
 spring.ai:
   openai:
-    # The vector profile deliberately requires an environment-provided key.
-    api-key: ${OPENAI_API_KEY}
     embedding:
       model: text-embedding-3-small
       dimensions: 1536
