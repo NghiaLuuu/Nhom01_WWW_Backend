@@ -128,7 +128,7 @@ public class DataSeeder implements CommandLineRunner {
 
                 // 2. Users
                 log.info("2. Đang tạo Users...");
-                String defaultPassword = passwordEncoder.encode("       ");
+                String defaultPassword = passwordEncoder.encode("123456");
 
                 staffRepository.save(
                                 Staff.builder().fullName("Admin VEXE").email("admin@vexe.vn").phoneNumber("0901234567")
@@ -147,6 +147,11 @@ public class DataSeeder implements CommandLineRunner {
                 }
 
                 List<Customer> customers = new ArrayList<>();
+                customers.add(customerRepository
+                                .save(Customer.builder().fullName("Lưu Trung Nghĩa").email("luutrungnghia19012003@gmail.com")
+                                                .phoneNumber("0909999999")
+                                                .password(defaultPassword).status("ACTIVE").address("TP.HCM")
+                                                .build()));
                 customers.add(customerRepository
                                 .save(Customer.builder().fullName("Lê Văn Khách").email("khach1@gmail.com")
                                                 .phoneNumber("0912345678")

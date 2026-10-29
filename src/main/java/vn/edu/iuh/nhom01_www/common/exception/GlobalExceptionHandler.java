@@ -25,4 +25,11 @@ public class GlobalExceptionHandler {
                 .status(org.springframework.http.HttpStatus.BAD_REQUEST)
                 .body(new ApiResponse<>(false, message, null));
     }
+
+    @ExceptionHandler({org.springframework.security.authentication.BadCredentialsException.class, org.springframework.security.core.userdetails.UsernameNotFoundException.class})
+    public ResponseEntity<ApiResponse<Object>> handleAuthenticationException(Exception ex) {
+        return ResponseEntity
+                .status(org.springframework.http.HttpStatus.BAD_REQUEST)
+                .body(new ApiResponse<>(false, "Email hoặc mật khẩu không chính xác", null));
+    }
 }
