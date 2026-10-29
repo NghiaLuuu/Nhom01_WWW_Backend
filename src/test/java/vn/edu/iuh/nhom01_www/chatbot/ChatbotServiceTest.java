@@ -143,3 +143,4 @@ class ChatbotServiceTest {
         verify(vectorIngestionService).ingestAll();
     }
 }
+
