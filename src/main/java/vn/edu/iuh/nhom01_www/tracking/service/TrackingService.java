@@ -25,5 +25,7 @@ public interface TrackingService {
     CustomerJourneyTimelineDto getCustomerJourney(String identifier);
 
     List<UserSession> getRecentSessions(int limit);
+
+    LiveVisitorsSummaryResponse getLiveVisitors(int activeWindowMinutes);
 }
 

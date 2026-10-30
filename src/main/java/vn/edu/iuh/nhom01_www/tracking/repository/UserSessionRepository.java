@@ -43,4 +43,7 @@ public interface UserSessionRepository extends JpaRepository<UserSession, UUID> 
     List<Object[]> countByTrafficSource();
 
     List<UserSession> findByCreatedAtAfter(LocalDateTime since);
+
+    @Query("SELECT s FROM UserSession s WHERE s.endTime >= :since ORDER BY s.endTime DESC")
+    List<UserSession> findActiveSessionsSince(@Param("since") LocalDateTime since);
 }

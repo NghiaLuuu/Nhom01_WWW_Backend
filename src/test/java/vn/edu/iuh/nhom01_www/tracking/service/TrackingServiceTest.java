@@ -47,6 +47,9 @@ class TrackingServiceTest {
     @Mock
     private CustomerRepository customerRepository;
 
+    @Mock
+    private vn.edu.iuh.nhom01_www.trip.repository.TripRepository tripRepository;
+
     @InjectMocks
     private TrackingServiceImpl trackingService;
 
@@ -204,6 +207,21 @@ class TrackingServiceTest {
         assertThat(journey.getCustomerName()).isEqualTo("Khách Hàng VIP");
         assertThat(journey.getCustomerEmail()).isEqualTo("vip.customer@vexe.vn");
         assertThat(journey.getJourneys()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("Should return live visitors with IP and activity")
+    void shouldReturnLiveVisitors() {
+        when(sessionRepository.findActiveSessionsSince(any(LocalDateTime.class)))
+                .thenReturn(java.util.Collections.singletonList(sampleSession));
+
+        vn.edu.iuh.nhom01_www.tracking.dto.LiveVisitorsSummaryResponse response =
+                trackingService.getLiveVisitors(5);
+
+        assertThat(response).isNotNull();
+        assertThat(response.getTotalOnline()).isEqualTo(1);
+        assertThat(response.getVisitors()).hasSize(1);
+        assertThat(response.getVisitors().get(0).getIpAddress()).isNotNull();
     }
 }
 

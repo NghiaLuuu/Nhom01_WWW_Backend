@@ -40,5 +40,13 @@ public class AdminTrackingController {
         List<UserSession> sessions = trackingService.getRecentSessions(limit);
         return ResponseEntity.ok(ApiResponse.success(sessions, "Recent sessions fetched"));
     }
+
+    @GetMapping("/live-visitors")
+    public ResponseEntity<ApiResponse<vn.edu.iuh.nhom01_www.tracking.dto.LiveVisitorsSummaryResponse>> getLiveVisitors(
+            @RequestParam(defaultValue = "5") int minutes) {
+
+        vn.edu.iuh.nhom01_www.tracking.dto.LiveVisitorsSummaryResponse response = trackingService.getLiveVisitors(minutes);
+        return ResponseEntity.ok(ApiResponse.success(response, "Live visitors fetched successfully"));
+    }
 }
 
