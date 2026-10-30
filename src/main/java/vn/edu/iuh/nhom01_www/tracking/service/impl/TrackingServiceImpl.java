@@ -157,6 +157,10 @@ public class TrackingServiceImpl implements vn.edu.iuh.nhom01_www.tracking.servi
         UserSession session = sessionRepository.findById(request.getSessionId())
                 .orElseThrow(() -> new IllegalArgumentException("Session not found: " + request.getSessionId()));
 
+        LocalDateTime now = LocalDateTime.now();
+        session.setEndTime(now);
+        sessionRepository.save(session);
+
         PageView pageView = null;
         if (request.getPageViewId() != null) {
             pageView = pageViewRepository.findById(request.getPageViewId()).orElse(null);
@@ -638,6 +642,13 @@ public class TrackingServiceImpl implements vn.edu.iuh.nhom01_www.tracking.servi
             visitorDtos.add(dto);
         }
 
+        // Đưa khách hàng có thao tác mới nhất lên trên cùng (Newest Activity First)
+        visitorDtos.sort((a, b) -> {
+            String timeA = a.getLastActivityTime() != null ? a.getLastActivityTime() : "";
+            String timeB = b.getLastActivityTime() != null ? b.getLastActivityTime() : "";
+            return timeB.compareTo(timeA);
+        });
+
         return LiveVisitorsSummaryResponse.builder()
                 .totalOnline(visitorDtos.size())
                 .registeredOnline(registeredCount)
@@ -655,7 +666,7 @@ public class TrackingServiceImpl implements vn.edu.iuh.nhom01_www.tracking.servi
         LiveVisitorDto visitorDto = buildLiveVisitorDto(s);
         boolean isOnline = s.getEndTime() == null || s.getEndTime().isAfter(LocalDateTime.now().minusMinutes(10));
 
-        // Get all PageViews
+        // Get all PageViews (Newest first)
         List<PageView> pvs = pageViewRepository.findBySessionIdOrderByEnteredAtAsc(sessionId);
         List<LiveVisitorDetailDto.SessionPageViewDto> pvDtos = pvs.stream().map(pv -> LiveVisitorDetailDto.SessionPageViewDto.builder()
                 .id(pv.getId() != null ? pv.getId().toString() : "")
@@ -665,8 +676,9 @@ public class TrackingServiceImpl implements vn.edu.iuh.nhom01_www.tracking.servi
                 .activeSeconds(pv.getActiveDurationSeconds() != null ? pv.getActiveDurationSeconds() : 0)
                 .idleSeconds(pv.getIdleDurationSeconds() != null ? pv.getIdleDurationSeconds() : 0)
                 .build()).collect(Collectors.toList());
+        Collections.reverse(pvDtos);
 
-        // Get all Actions
+        // Get all Actions (Newest first)
         List<UserAction> acts = actionRepository.findBySessionIdOrderByCreatedAtAsc(sessionId);
         List<LiveVisitorDetailDto.SessionActionDto> actDtos = acts.stream().map(a -> LiveVisitorDetailDto.SessionActionDto.builder()
                 .id(a.getId() != null ? a.getId().toString() : "")
@@ -674,6 +686,7 @@ public class TrackingServiceImpl implements vn.edu.iuh.nhom01_www.tracking.servi
                 .payload(a.getPayload())
                 .createdAt(a.getCreatedAt() != null ? a.getCreatedAt().format(ISO_FORMATTER) : "")
                 .build()).collect(Collectors.toList());
+        Collections.reverse(actDtos);
 
         return LiveVisitorDetailDto.builder()
                 .visitor(visitorDto)
@@ -713,11 +726,26 @@ public class TrackingServiceImpl implements vn.edu.iuh.nhom01_www.tracking.servi
         // Last Action
         List<UserAction> acts = actionRepository.findBySessionIdOrderByCreatedAtAsc(s.getId());
         UserAction lastAct = acts.isEmpty() ? null : acts.get(acts.size() - 1);
-        String lastActType = lastAct != null ? lastAct.getActionType() : "ĐANG_XEM_TRANG";
-        String lastActPayload = lastAct != null ? lastAct.getPayload() : "";
-        String lastActivity = (lastAct != null && lastAct.getCreatedAt() != null)
-                ? lastAct.getCreatedAt().format(ISO_FORMATTER)
-                : (s.getEndTime() != null ? s.getEndTime().format(ISO_FORMATTER) : "");
+
+        LocalDateTime latestTime = s.getEndTime() != null ? s.getEndTime() : s.getCreatedAt();
+        if (lastPv != null && lastPv.getEnteredAt() != null && (latestTime == null || lastPv.getEnteredAt().isAfter(latestTime))) {
+            latestTime = lastPv.getEnteredAt();
+        }
+        if (lastAct != null && lastAct.getCreatedAt() != null && (latestTime == null || lastAct.getCreatedAt().isAfter(latestTime))) {
+            latestTime = lastAct.getCreatedAt();
+        }
+
+        String lastActType = "CHUYỂN_TRANG";
+        String lastActPayload = pageTitle + " (" + pageUrl + ")";
+
+        // If the action is more recent than or equal to the pageview entry, display that action
+        if (lastAct != null && lastAct.getCreatedAt() != null) {
+            if (lastPv == null || lastPv.getEnteredAt() == null || !lastPv.getEnteredAt().isAfter(lastAct.getCreatedAt())) {
+                lastActType = lastAct.getActionType();
+                lastActPayload = lastAct.getPayload() != null ? lastAct.getPayload() : "";
+            }
+        }
+        String lastActivity = latestTime != null ? latestTime.format(ISO_FORMATTER) : "";
 
         // Recommendations
         List<UserRecommendation> recs;
