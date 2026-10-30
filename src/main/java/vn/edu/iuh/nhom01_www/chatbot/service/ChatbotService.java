@@ -585,10 +585,52 @@ public class ChatbotService {
 
         // 12. Question about trips in general (without specific destination)
         if (lower.contains("xe") || lower.contains("chuyến") || lower.contains("vé") || lower.contains("đặt") || lower.contains("đi đâu")) {
+            if (!trips.isEmpty()) {
+                StringBuilder sb = new StringBuilder();
+                sb.append("Dạ anh/chị muốn khởi hành từ đâu và đến tỉnh thành nào ạ? (Ví dụ: *'Tìm xe Sài Gòn đi Đà Lạt tối nay'* hoặc *'Hà Nội đi Sapa sáng mai'*).\n\n")
+                  .append("Trong lúc chờ anh/chị chọn lộ trình, em gợi ý nhanh một số chuyến xe tiêu biểu đang sẵn vé:\n\n");
+                for (Trip t : trips.stream().limit(3).collect(Collectors.toList())) {
+                    String dep = t.getRoute() != null ? t.getRoute().getDepartureLocation() : "N/A";
+                    String arr = t.getRoute() != null ? t.getRoute().getArrivalLocation() : "N/A";
+                    String vehicleType = t.getVehicle() != null ? t.getVehicle().getType() : "Tiêu chuẩn";
+                    int capacity = t.getVehicle() != null ? t.getVehicle().getCapacity() : 34;
+                    String priceStr = t.getPrice() != null ? CURRENCY_FORMATTER.format(t.getPrice()) + " VNĐ" : "200.000 VNĐ";
+                    String timeStr = t.getDepartureTime() != null ? TIME_FORMATTER.format(t.getDepartureTime()) : "Hôm nay";
+
+                    sb.append("- 🚌 **Chuyến #").append(t.getId()).append("**: ").append(dep).append(" ➔ ").append(arr).append("\n")
+                      .append("  • Khởi hành: **").append(timeStr).append("**\n")
+                      .append("  • Loại xe: ").append(vehicleType).append(" (").append(capacity).append(" chỗ/giường)\n")
+                      .append("  • Giá vé: **").append(priceStr).append("**\n")
+                      .append("  • [[BOOK_TRIP_ID:").append(t.getId()).append("]]\n\n");
+                }
+                sb.append("Anh/chị có thể bấm **Đặt vé ngay** hoặc nhắn cho em điểm đi, điểm đến mong muốn nhé!");
+                return sb.toString();
+            }
             return "Dạ anh/chị muốn khởi hành từ đâu và đến tỉnh thành nào ạ? (Ví dụ: *'Tìm xe Sài Gòn đi Đà Lạt tối nay'* hoặc *'Hà Nội đi Sapa sáng mai'*) để em tra cứu chuyến xe và giá vé chính xác nhất cho mình nhé!";
         }
 
-        // 11. General Unrecognized Query (Chitchat or out-of-scope)
+        // 13. General Unrecognized Query (Chitchat or out-of-scope)
+        if (!trips.isEmpty()) {
+            StringBuilder sb = new StringBuilder();
+            sb.append("Dạ em là trợ lý AI chuyên về **tra cứu lộ trình, giá vé và hỗ trợ đặt vé xe khách** của VEXE.\n\n")
+              .append("Anh/chị đang cần tìm chuyến xe từ đâu đến tỉnh thành nào ạ? Dưới đây là các chuyến xe phổ biến đang có sẵn vé:\n\n");
+            for (Trip t : trips.stream().limit(3).collect(Collectors.toList())) {
+                String dep = t.getRoute() != null ? t.getRoute().getDepartureLocation() : "N/A";
+                String arr = t.getRoute() != null ? t.getRoute().getArrivalLocation() : "N/A";
+                String vehicleType = t.getVehicle() != null ? t.getVehicle().getType() : "Tiêu chuẩn";
+                int capacity = t.getVehicle() != null ? t.getVehicle().getCapacity() : 34;
+                String priceStr = t.getPrice() != null ? CURRENCY_FORMATTER.format(t.getPrice()) + " VNĐ" : "200.000 VNĐ";
+                String timeStr = t.getDepartureTime() != null ? TIME_FORMATTER.format(t.getDepartureTime()) : "Hôm nay";
+
+                sb.append("- 🚌 **Chuyến #").append(t.getId()).append("**: ").append(dep).append(" ➔ ").append(arr).append("\n")
+                  .append("  • Khởi hành: **").append(timeStr).append("**\n")
+                  .append("  • Loại xe: ").append(vehicleType).append(" (").append(capacity).append(" chỗ/giường)\n")
+                  .append("  • Giá vé: **").append(priceStr).append("**\n")
+                  .append("  • [[BOOK_TRIP_ID:").append(t.getId()).append("]]\n\n");
+            }
+            sb.append("Anh/chị hãy cho em biết điểm đi và điểm đến cụ thể để em lọc chuyến chuẩn nhất nhé!");
+            return sb.toString();
+        }
         return "Dạ em là trợ lý AI chuyên về **tra cứu lộ trình, giá vé và đặt vé xe khách** của VEXE. Anh/chị đang cần tìm chuyến xe từ đâu đến tỉnh thành nào ạ? Hãy chia sẻ với em để em tra cứu giúp mình nhé!";
     }
 

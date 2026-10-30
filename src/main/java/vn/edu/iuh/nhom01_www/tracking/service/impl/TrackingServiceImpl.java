@@ -381,6 +381,10 @@ public class TrackingServiceImpl implements vn.edu.iuh.nhom01_www.tracking.servi
         }
         if (!recs.isEmpty() && recs.get(0).getPersonaCluster() != null) {
             matchedPersona = recs.get(0).getPersonaCluster();
+        } else if (identifiedCustomer != null) {
+            matchedPersona = "COMMUTER_HABIT";
+        } else {
+            matchedPersona = "WEEKEND_EXPLORER";
         }
 
         // 3. Extract all events across sessions
@@ -756,7 +760,23 @@ public class TrackingServiceImpl implements vn.edu.iuh.nhom01_www.tracking.servi
         }
 
         String persona = (!recs.isEmpty() && recs.get(0).getPersonaCluster() != null)
-                ? recs.get(0).getPersonaCluster() : "POPULAR_TRENDING";
+                ? recs.get(0).getPersonaCluster() : null;
+
+        if (persona == null || "POPULAR_TRENDING".equalsIgnoreCase(persona)) {
+            String lowerUrl = pageUrl != null ? pageUrl.toLowerCase(Locale.ROOT) : "";
+            String lowerPayload = lastActPayload != null ? lastActPayload.toLowerCase(Locale.ROOT) : "";
+            if (lowerUrl.contains("checkout") || lowerPayload.contains("limousine") || lowerPayload.contains("vip")) {
+                persona = "DALAT_LIMOUSINE";
+            } else if (lowerUrl.contains("search") || lowerPayload.contains("da lat") || lowerPayload.contains("nha trang") || lowerPayload.contains("đà lạt") || lowerPayload.contains("tim xe")) {
+                persona = "NHATRANG_FAMILY";
+            } else if (lowerUrl.contains("price") || lowerPayload.contains("price_asc") || lowerPayload.contains("180000")) {
+                persona = "BUDGET_SAVER";
+            } else if (s.getCustomerId() != null) {
+                persona = "COMMUTER_HABIT";
+            } else {
+                persona = "POPULAR_TRENDING";
+            }
+        }
 
         List<LiveVisitorDto.LiveRecommendedTripDto> tripDtos = new ArrayList<>();
         for (UserRecommendation r : recs) {
