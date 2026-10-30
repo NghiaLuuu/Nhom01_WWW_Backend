@@ -99,7 +99,7 @@ class RecommendationServiceTest {
                 .pageTitle("Vé xe Limousine Đà Lạt")
                 .build();
 
-        when(sessionRepository.findByAnonymousIdOrCustomerIdOrderByCreatedAtDesc("anon-dalat-user", null))
+        when(sessionRepository.findByAnonymousIdOrderByCreatedAtDesc("anon-dalat-user"))
                 .thenReturn(List.of(session));
         when(pageViewRepository.findBySessionIdOrderByEnteredAtAsc(sessionId))
                 .thenReturn(List.of(pv));
@@ -114,7 +114,7 @@ class RecommendationServiceTest {
     @Test
     @DisplayName("Should generate personalized recommendations combining hybrid score and badges")
     void shouldGenerateRecommendations() {
-        when(sessionRepository.findByAnonymousIdOrCustomerIdOrderByCreatedAtDesc("anon-test", null))
+        when(sessionRepository.findByAnonymousIdOrderByCreatedAtDesc("anon-test"))
                 .thenReturn(Collections.emptyList()); // Fallback to POPULAR_TRENDING
         when(tripRepository.findAll()).thenReturn(List.of(sampleTrip));
         when(tripBookingAvailabilityService.getAvailableSeatCount(sampleTrip)).thenReturn(24);

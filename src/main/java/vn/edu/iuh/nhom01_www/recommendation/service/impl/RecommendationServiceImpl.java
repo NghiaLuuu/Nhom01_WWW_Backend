@@ -60,11 +60,21 @@ public class RecommendationServiceImpl implements RecommendationService {
                 Object cached = redisTemplate.get().opsForValue().get(cacheKey);
                 if (cached instanceof List<?> list && !list.isEmpty()) {
                     log.debug("[Recommendation] Cache HIT for key {}", cacheKey);
-                    return ((List<?>) list).stream()
-                            .filter(RecommendedTripDto.class::isInstance)
-                            .map(RecommendedTripDto.class::cast)
-                            .limit(maxLimit)
-                            .collect(Collectors.toList());
+                    com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                    mapper.registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
+                    List<RecommendedTripDto> converted = new ArrayList<>();
+                    for (Object item : list) {
+                        if (item instanceof RecommendedTripDto dto) {
+                            converted.add(dto);
+                        } else {
+                            try {
+                                converted.add(mapper.convertValue(item, RecommendedTripDto.class));
+                            } catch (Exception ignored) {}
+                        }
+                    }
+                    if (!converted.isEmpty()) {
+                        return converted.stream().limit(maxLimit).collect(Collectors.toList());
+                    }
                 }
             } catch (Exception e) {
                 log.warn("[Recommendation] Redis read error: {}", e.getMessage());
@@ -179,9 +189,9 @@ public class RecommendationServiceImpl implements RecommendationService {
     public PersonaType inferUserPersona(String anonymousId, UUID customerId, String ipAddress) {
         List<UserSession> sessions = Collections.emptyList();
         if (customerId != null) {
-            sessions = sessionRepository.findByAnonymousIdOrCustomerIdOrderByCreatedAtDesc(null, customerId);
+            sessions = sessionRepository.findByCustomerIdOrderByCreatedAtDesc(customerId);
         } else if (anonymousId != null && !anonymousId.isBlank()) {
-            sessions = sessionRepository.findByAnonymousIdOrCustomerIdOrderByCreatedAtDesc(anonymousId, null);
+            sessions = sessionRepository.findByAnonymousIdOrderByCreatedAtDesc(anonymousId);
         } else if (ipAddress != null && !ipAddress.isBlank()) {
             sessions = sessionRepository.findByIpAddressOrderByCreatedAtDesc(ipAddress);
         }

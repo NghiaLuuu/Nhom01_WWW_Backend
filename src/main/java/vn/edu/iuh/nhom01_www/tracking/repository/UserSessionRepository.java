@@ -18,7 +18,9 @@ public interface UserSessionRepository extends JpaRepository<UserSession, UUID> 
 
     Optional<UserSession> findTopByCustomerIdOrderByCreatedAtDesc(UUID customerId);
 
-    List<UserSession> findByAnonymousIdOrCustomerIdOrderByCreatedAtDesc(String anonymousId, UUID customerId);
+    List<UserSession> findByAnonymousIdOrderByCreatedAtDesc(String anonymousId);
+
+    List<UserSession> findByCustomerIdOrderByCreatedAtDesc(UUID customerId);
 
     List<UserSession> findByIpAddressOrderByCreatedAtDesc(String ipAddress);
 

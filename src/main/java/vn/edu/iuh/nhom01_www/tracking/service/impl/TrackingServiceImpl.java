@@ -269,12 +269,12 @@ public class TrackingServiceImpl implements vn.edu.iuh.nhom01_www.tracking.servi
         if (parsedUuid != null) {
             // Check if it's a customerId or sessionId
             final UUID finalParsed = parsedUuid;
-            sessions = sessionRepository.findByAnonymousIdOrCustomerIdOrderByCreatedAtDesc(null, finalParsed);
+            sessions = sessionRepository.findByCustomerIdOrderByCreatedAtDesc(finalParsed);
             if (sessions.isEmpty()) {
                 sessionRepository.findById(finalParsed).ifPresent(sessions::add);
             }
         } else if (identifier.startsWith("anon-")) {
-            sessions = sessionRepository.findByAnonymousIdOrCustomerIdOrderByCreatedAtDesc(identifier, null);
+            sessions = sessionRepository.findByAnonymousIdOrderByCreatedAtDesc(identifier);
         } else {
             sessions = sessionRepository.findByIpAddressOrderByCreatedAtDesc(identifier);
         }
