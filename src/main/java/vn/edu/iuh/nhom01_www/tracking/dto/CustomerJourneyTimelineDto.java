@@ -1,5 +1,6 @@
 package vn.edu.iuh.nhom01_www.tracking.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -15,7 +16,10 @@ public class CustomerJourneyTimelineDto {
     private String identifier;
     private String customerName;
     private String customerEmail;
+    
+    @JsonProperty("isRegisteredCustomer")
     private boolean isRegisteredCustomer;
+    
     private List<String> linkedAnonymousIds;
     private int totalSessions;
     private int totalPageViews;
