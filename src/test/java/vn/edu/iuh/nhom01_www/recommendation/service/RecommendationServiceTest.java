@@ -131,4 +131,26 @@ class RecommendationServiceTest {
         assertThat(rec.getBadgeText()).isNotBlank();
         assertThat(rec.getReason()).contains("Đà Lạt");
     }
+
+    @Test
+    @DisplayName("Should prioritize trips departing from user's current city with nearby badge")
+    void shouldPrioritizeTripsFromCurrentCity() {
+        Route routeHn = Route.builder().id(2L).departureLocation("Hà Nội").arrivalLocation("Hạ Long").build();
+        Trip tripHn = Trip.builder().id(2L).route(routeHn).price(BigDecimal.valueOf(200000)).departureTime(LocalDateTime.now().plusDays(1)).build();
+
+        when(sessionRepository.findByAnonymousIdOrderByCreatedAtDesc("anon-loc"))
+                .thenReturn(Collections.emptyList());
+        when(tripRepository.findAll()).thenReturn(List.of(tripHn, sampleTrip)); // sampleTrip departs from TP.HCM
+
+        List<RecommendedTripDto> results = recommendationService.getPersonalizedRecommendations(
+                "anon-loc", null, "127.0.0.1", "TP.HCM", 5
+        );
+
+        assertThat(results).isNotEmpty();
+        RecommendedTripDto topTrip = results.get(0);
+        assertThat(topTrip.getTripId()).isEqualTo(sampleTrip.getId()); // TP.HCM trip must rank #1!
+        assertThat(topTrip.getDepartureLocation()).isEqualTo("TP.HCM");
+        assertThat(topTrip.getBadgeText()).contains("Khởi hành gần bạn 📍");
+        assertThat(topTrip.getReason()).contains("gần vị trí hiện tại");
+    }
 }

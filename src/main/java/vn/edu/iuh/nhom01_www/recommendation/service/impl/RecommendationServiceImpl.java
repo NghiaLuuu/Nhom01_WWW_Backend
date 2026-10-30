@@ -49,12 +49,12 @@ public class RecommendationServiceImpl implements RecommendationService {
     @Override
     @Transactional
     public List<RecommendedTripDto> getPersonalizedRecommendations(
-            String anonymousId, UUID customerId, String ipAddress, int limit) {
+            String anonymousId, UUID customerId, String ipAddress, String currentCity, int limit) {
 
         int maxLimit = Math.max(1, Math.min(limit, 10));
 
         // 1. Check Redis Cache
-        String cacheKey = getCacheKey(anonymousId, customerId, ipAddress);
+        String cacheKey = getCacheKey(anonymousId, customerId, ipAddress, currentCity);
         if (redisTemplate != null && redisTemplate.isPresent()) {
             try {
                 Object cached = redisTemplate.get().opsForValue().get(cacheKey);
@@ -83,6 +83,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 
         // 2. Infer Persona ("Tìm hội đồng điệu")
         PersonaType persona = inferUserPersona(anonymousId, customerId, ipAddress);
+        log.info("[Recommendation] Inferred persona: {} for anonId={}, customerId={}, currentCity={}", persona, anonymousId, customerId, currentCity);
         log.info("[Recommendation] Inferred persona: {} for anonId={}, customerId={}", persona, anonymousId, customerId);
 
         // 3. Perform pgvector Semantic Search
@@ -122,6 +123,18 @@ public class RecommendationServiceImpl implements RecommendationService {
 
             String routeFrom = trip.getRoute() != null ? trip.getRoute().getDepartureLocation() : "TP.HCM";
             String routeTo = trip.getRoute() != null ? trip.getRoute().getArrivalLocation() : "Đà Lạt";
+
+            // Location Awareness Boost:
+            // When customer allows location and currentCity is provided (e.g. "TP.HCM", "Hà Nội", "Đà Nẵng", etc.)
+            boolean isNearbyDeparture = matchesCity(routeFrom, currentCity);
+            if (currentCity != null && !currentCity.isBlank()) {
+                if (isNearbyDeparture) {
+                    hybridScore = Math.min(0.99, hybridScore + 0.35); // Prioritize trips departing from user's current city!
+                } else {
+                    hybridScore = Math.max(0.15, hybridScore - 0.25); // Lower rank for other departures
+                }
+            }
+
             Long routeId = trip.getRoute() != null ? trip.getRoute().getId() : 1L;
             String vehicleType = trip.getVehicle() != null ? trip.getVehicle().getType() : "Limousine 34 phòng";
             String plate = trip.getVehicle() != null ? trip.getVehicle().getLicensePlate() : "51B-892.12";
@@ -131,8 +144,13 @@ public class RecommendationServiceImpl implements RecommendationService {
                 availableSeats = tripBookingAvailabilityService.getAvailableSeatCount(trip);
             } catch (Exception ignored) {}
 
-            String badgeText = getBadgeForPersona(persona, hybridScore);
-            String reasonText = getReasonForPersona(persona, routeFrom, routeTo);
+            String badgeText = (isNearbyDeparture && currentCity != null && !currentCity.isBlank())
+                    ? "Khởi hành gần bạn 📍"
+                    : getBadgeForPersona(persona, hybridScore);
+
+            String reasonText = (isNearbyDeparture && currentCity != null && !currentCity.isBlank())
+                    ? "Chuyến xe xuất phát từ " + routeFrom + " đến " + routeTo + " (gần vị trí hiện tại của bạn)"
+                    : getReasonForPersona(persona, routeFrom, routeTo);
 
             scoredCandidates.add(RecommendedTripDto.builder()
                     .tripId(trip.getId())
@@ -341,7 +359,7 @@ public class RecommendationServiceImpl implements RecommendationService {
     @Override
     @Transactional
     public void invalidateAndRefreshUser(String anonymousId, UUID customerId, String ipAddress) {
-        String cacheKey = getCacheKey(anonymousId, customerId, ipAddress);
+        String cacheKey = getCacheKey(anonymousId, customerId, ipAddress, null);
         if (redisTemplate != null && redisTemplate.isPresent()) {
             try {
                 redisTemplate.get().delete(cacheKey);
@@ -357,10 +375,45 @@ public class RecommendationServiceImpl implements RecommendationService {
         }
     }
 
-    private String getCacheKey(String anonymousId, UUID customerId, String ipAddress) {
-        if (customerId != null) return REDIS_PREFIX + "USER:" + customerId;
-        if (anonymousId != null && !anonymousId.isBlank()) return REDIS_PREFIX + "ANON:" + anonymousId;
-        if (ipAddress != null && !ipAddress.isBlank()) return REDIS_PREFIX + "IP:" + ipAddress;
-        return REDIS_PREFIX + "DEFAULT";
+    private String getCacheKey(String anonymousId, UUID customerId, String ipAddress, String currentCity) {
+        String base = (customerId != null ? "USER:" + customerId : (anonymousId != null && !anonymousId.isBlank() ? "ANON:" + anonymousId : (ipAddress != null && !ipAddress.isBlank() ? "IP:" + ipAddress : "DEFAULT")));
+        return REDIS_PREFIX + base + (currentCity != null && !currentCity.isBlank() ? ":CITY_" + currentCity.trim().toLowerCase(Locale.ROOT) : "");
+    }
+
+    private boolean matchesCity(String location, String targetCity) {
+        if (location == null || targetCity == null || targetCity.isBlank()) return false;
+        String l = location.toLowerCase(Locale.ROOT).trim();
+        String t = targetCity.toLowerCase(Locale.ROOT).trim();
+
+        // TP.HCM, Sai Gon, Sài Gòn, TP. Hồ Chí Minh
+        boolean isHcmTarget = t.contains("hcm") || t.contains("sài gòn") || t.contains("sai gon") || t.contains("hồ chí minh");
+        boolean isHcmLoc = l.contains("hcm") || l.contains("sài gòn") || l.contains("sai gon") || l.contains("hồ chí minh");
+        if (isHcmTarget && isHcmLoc) return true;
+
+        // Hanoi
+        boolean isHnTarget = t.contains("hà nội") || t.contains("ha noi");
+        boolean isHnLoc = l.contains("hà nội") || l.contains("ha noi");
+        if (isHnTarget && isHnLoc) return true;
+
+        // Da Nang
+        boolean isDnTarget = t.contains("đà nẵng") || t.contains("da nang");
+        boolean isDnLoc = l.contains("đà nẵng") || l.contains("da nang");
+        if (isDnTarget && isDnLoc) return true;
+
+        // Can Tho
+        boolean isCtTarget = t.contains("cần thơ") || t.contains("can tho");
+        boolean isCtLoc = l.contains("cần thơ") || l.contains("can tho");
+        if (isCtTarget && isCtLoc) return true;
+
+        // Nha Trang
+        if (t.contains("nha trang") && l.contains("nha trang")) return true;
+
+        // Da Lat
+        if ((t.contains("đà lạt") || t.contains("da lat")) && (l.contains("đà lạt") || l.contains("da lat"))) return true;
+
+        // Hai Phong
+        if ((t.contains("hải phòng") || t.contains("hai phong")) && (l.contains("hải phòng") || l.contains("hai phong"))) return true;
+
+        return l.contains(t) || t.contains(l);
     }
 }

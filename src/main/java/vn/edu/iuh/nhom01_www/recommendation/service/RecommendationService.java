@@ -8,7 +8,11 @@ import java.util.UUID;
 
 public interface RecommendationService {
 
-    List<RecommendedTripDto> getPersonalizedRecommendations(String anonymousId, UUID customerId, String ipAddress, int limit);
+    List<RecommendedTripDto> getPersonalizedRecommendations(String anonymousId, UUID customerId, String ipAddress, String currentCity, int limit);
+
+    default List<RecommendedTripDto> getPersonalizedRecommendations(String anonymousId, UUID customerId, String ipAddress, int limit) {
+        return getPersonalizedRecommendations(anonymousId, customerId, ipAddress, null, limit);
+    }
 
     PersonaType inferUserPersona(String anonymousId, UUID customerId, String ipAddress);
 

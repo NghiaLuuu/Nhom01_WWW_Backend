@@ -38,11 +38,12 @@ public class RecommendationController {
     public ResponseEntity<ApiResponse<List<RecommendedTripDto>>> getRecommendations(
             @RequestParam(required = false) String anonymousId,
             @RequestParam(required = false) UUID customerId,
+            @RequestParam(required = false) String currentCity,
             @RequestParam(defaultValue = "5") int limit,
             HttpServletRequest request) {
 
         String ip = getClientIp(request);
-        List<RecommendedTripDto> list = recommendationService.getPersonalizedRecommendations(anonymousId, customerId, ip, limit);
+        List<RecommendedTripDto> list = recommendationService.getPersonalizedRecommendations(anonymousId, customerId, ip, currentCity, limit);
         return ResponseEntity.ok(ApiResponse.success(list, "Personalized recommendations retrieved"));
     }
 
