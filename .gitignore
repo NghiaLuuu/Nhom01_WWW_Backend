@@ -34,3 +34,8 @@ build/
 
 ### Custom Secrets ###
 src/main/resources/application.yml
+
+mvnw
+mvnw.cmd
+.mvn/
+

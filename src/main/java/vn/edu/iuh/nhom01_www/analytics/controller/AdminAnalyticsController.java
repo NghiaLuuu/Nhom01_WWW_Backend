@@ -58,4 +58,30 @@ public class AdminAnalyticsController {
         return ResponseEntity.ok(new ApiResponse<>(true, "Success",
                 analyticsService.searchTrends(from, to, limit)));
     }
+
+    @GetMapping("/tab-flows")
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> tabFlows(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(defaultValue = "10") @Min(1) @Max(100) int limit) {
+        return ResponseEntity.ok(new ApiResponse<>(true, "Success",
+                analyticsService.tabFlows(from, to, limit)));
+    }
+
+    @GetMapping("/active-users")
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> activeUsers(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(defaultValue = "15") @Min(1) @Max(100) int limit) {
+        return ResponseEntity.ok(new ApiResponse<>(true, "Success",
+                analyticsService.activeUsers(from, to, limit)));
+    }
+
+    @GetMapping("/user-journey")
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> userJourney(
+            @RequestParam(required = false) String identifier,
+            @RequestParam(defaultValue = "50") @Min(1) @Max(200) int limit) {
+        return ResponseEntity.ok(new ApiResponse<>(true, "Success",
+                analyticsService.userJourney(identifier, limit)));
+    }
 }

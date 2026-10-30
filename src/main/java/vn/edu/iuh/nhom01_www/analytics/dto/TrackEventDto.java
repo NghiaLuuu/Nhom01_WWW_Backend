@@ -10,9 +10,11 @@ import java.util.Map;
 public record TrackEventDto(
         @NotBlank @Size(max = 100) String sessionId,
         @NotBlank @Size(max = 100) String visitorId,
+        @Size(max = 100) String userId,
+        @Size(max = 320) String userEmail,
         @NotBlank
         @Size(max = 50)
-        @Pattern(regexp = "PAGE_VIEW|DWELL_TIME|CLICK_EVENT|SEARCH_TRIP|SEARCH_TRIPS|VIEW_SEATS|SELECT_SEAT|FILL_INFO|BOOK_SUCCESS|ABANDON_BOOKING|FUNNEL_STEP|CHATBOT_OPEN|CHATBOT_CLOSE|CHATBOT_QUESTION|CHATBOT_RESPONSE")
+        @Pattern(regexp = "PAGE_VIEW|TAB_SWITCH|DWELL_TIME|CLICK_EVENT|SEARCH_TRIP|SEARCH_TRIPS|VIEW_SEATS|SELECT_SEAT|FILL_INFO|BOOK_SUCCESS|ABANDON_BOOKING|FUNNEL_STEP|CHATBOT_OPEN|CHATBOT_CLOSE|CHATBOT_QUESTION|CHATBOT_RESPONSE")
         String actionType,
         @Size(max = 2048) String pageUrl,
         @Size(max = 255) String pageTitle,
