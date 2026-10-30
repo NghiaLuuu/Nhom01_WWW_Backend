@@ -23,6 +23,13 @@ public class Nhom01WwwApplication {
     @Bean
     public CommandLineRunner autoSeedChatbotMetadata(TableMetadataRepository repo, JdbcTemplate jdbcTemplate) {
         return args -> {
+            // Đảm bảo bảng tickets luôn có 2 cột audit created_at và updated_at
+            try {
+                jdbcTemplate.execute("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS created_at TIMESTAMP(6)");
+                jdbcTemplate.execute("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP(6)");
+            } catch (Exception ignored) {
+            }
+
             // Translate legacy vehicle types already stored in the database.
             jdbcTemplate.update("UPDATE vehicles SET type = CASE type "
                     + "WHEN 'Seater' THEN 'Ghế ngồi' "
