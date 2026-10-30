@@ -6,7 +6,8 @@ import vn.edu.iuh.nhom01_www.user.model.Customer;
 import java.util.Optional;
 import java.util.UUID;
 
-public interface CustomerRepository extends JpaRepository<Customer, UUID> {
+public interface CustomerRepository extends JpaRepository<Customer, UUID>, org.springframework.data.jpa.repository.JpaSpecificationExecutor<Customer> {
+    Customer findByEmailIgnoreCase(String email);
     Customer findByEmail(String email);
     Optional<Customer> findOptionalByEmail(String email);
     Optional<Customer> findByPhoneNumber(String phoneNumber);

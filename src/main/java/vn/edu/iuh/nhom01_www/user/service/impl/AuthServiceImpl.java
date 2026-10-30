@@ -167,6 +167,30 @@ public class AuthServiceImpl implements AuthService {
                 .build();
     }
 
+    @Override
+    public JwtResponse webLogin(LoginRequest request) {
+        String username = request.getUsername().trim();
+        Customer customer = customerRepository.findByEmailIgnoreCase(username);
+        if (customer == null) {
+            return login(request);
+        }
+        if (!"ACTIVE".equalsIgnoreCase(customer.getStatus())) {
+            throw new CustomException("Account is inactive or locked. Please contact administrator.", HttpStatus.FORBIDDEN);
+        }
+        Authentication authentication = authenticationManager.authenticate(
+                new UsernamePasswordAuthenticationToken(customer.getEmail(), request.getPassword()));
+        UserDetails userDetails = (UserDetails) authentication.getPrincipal();
+        Long version = userDetails instanceof vn.edu.iuh.nhom01_www.common.security.CustomUserDetails details
+                && details.getVersion() != null ? details.getVersion() : 0L;
+        RefreshToken refreshToken = refreshTokenService.createRefreshToken(userDetails.getUsername(), version);
+        return JwtResponse.builder()
+                .accessToken(jwtUtils.generateToken(userDetails))
+                .refreshToken(refreshToken.getToken())
+                .tokenType("Bearer")
+                .user(LoginUserResponse.builder().id(customer.getId()).username(customer.getEmail()).role("customer").build())
+                .build();
+    }
+
     private boolean isMobileStaffRole(String roleName) {
         return "ROLE_ADMIN".equalsIgnoreCase(roleName) || "ROLE_STAFF".equalsIgnoreCase(roleName);
     }
@@ -184,6 +208,10 @@ public class AuthServiceImpl implements AuthService {
                 .map(refreshToken -> {
                     String userEmail = refreshToken.getUserEmail();
                     UserDetails userDetails = userDetailsService.loadUserByUsername(userEmail);
+                    if (!userDetails.isEnabled() || !userDetails.isAccountNonLocked()) {
+                        refreshTokenService.deleteByToken(refreshToken);
+                        throw new CustomException("Account is inactive or locked", HttpStatus.UNAUTHORIZED);
+                    }
                     
                     Long dbVersion = 0L;
                     if (userDetails instanceof vn.edu.iuh.nhom01_www.common.security.CustomUserDetails) {

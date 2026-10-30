@@ -31,7 +31,11 @@ public class CancelRequest {
     @Column(nullable = false)
     private String status;
 
+    @Column(length = 2000)
     private String rejectReason;
+
+    @Column(length = 2000)
+    private String reason;
 
     private LocalDateTime resolvedAt;
 

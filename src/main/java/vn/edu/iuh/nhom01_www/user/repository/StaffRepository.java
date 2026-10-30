@@ -3,7 +3,8 @@ package vn.edu.iuh.nhom01_www.user.repository;
 import org.springframework.data.jpa.repository.JpaRepository;
 import vn.edu.iuh.nhom01_www.user.model.Staff;
 
-public interface StaffRepository extends JpaRepository<Staff, java.util.UUID> {
+public interface StaffRepository extends JpaRepository<Staff, java.util.UUID>, org.springframework.data.jpa.repository.JpaSpecificationExecutor<Staff> {
+    java.util.Optional<Staff> findByPhoneNumber(String phoneNumber);
     Staff findByEmail(String email);
     Staff findByEmailIgnoreCase(String email);
     Staff findByStaffCodeIgnoreCase(String staffCode);

@@ -14,6 +14,10 @@ import java.util.Optional;
 public interface TicketRepository extends JpaRepository<Ticket, Long> {
     List<Ticket> findByBookingId(Long bookingId);
 
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select t from Ticket t where t.booking.id = :bookingId order by t.id")
+    List<Ticket> findForUpdateByBookingId(@Param("bookingId") Long bookingId);
+
     Optional<Ticket> findByTicketCode(String ticketCode);
 
     @Modifying(clearAutomatically = false, flushAutomatically = true)

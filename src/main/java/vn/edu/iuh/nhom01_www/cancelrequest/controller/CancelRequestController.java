@@ -2,43 +2,63 @@ package vn.edu.iuh.nhom01_www.cancelrequest.controller;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import vn.edu.iuh.nhom01_www.cancelrequest.dto.CancelRequestDto;
-import vn.edu.iuh.nhom01_www.cancelrequest.model.CancelRequest;
+import vn.edu.iuh.nhom01_www.cancelrequest.dto.CancelRequestResponse;
+import vn.edu.iuh.nhom01_www.cancelrequest.dto.ResolveCancelRequest;
 import vn.edu.iuh.nhom01_www.cancelrequest.service.CancelRequestService;
 import vn.edu.iuh.nhom01_www.common.dto.ApiResponse;
-
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import vn.edu.iuh.nhom01_www.common.dto.PageResponse;
+import vn.edu.iuh.nhom01_www.common.security.service.CurrentUserService;
 
 @RestController
 @RequestMapping("/api/cancel-requests")
 @RequiredArgsConstructor
+@Transactional
 public class CancelRequestController {
-
-    private final CancelRequestService cancelRequestService;
+    private final CancelRequestService service;
+    private final CurrentUserService currentUser;
 
     @PostMapping
-    public ResponseEntity<ApiResponse<CancelRequest>> submitCancelRequest(@Valid @RequestBody CancelRequestDto request) {
-        CancelRequest created = cancelRequestService.submitCancelRequest(request.getBookingId(), request.getReason());
-        return ResponseEntity.ok(new ApiResponse<>(true, "Cancel request submitted", created));
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ApiResponse<CancelRequestResponse> submit(@Valid @RequestBody CancelRequestDto request) {
+        return new ApiResponse<>(true, "Cancel request submitted", CancelRequestResponse.from(
+                service.submitCancelRequest(request.getBookingId(), request.getReason())));
     }
 
     @GetMapping
-    public ResponseEntity<ApiResponse<List<CancelRequest>>> getPendingRequests() {
-        return ResponseEntity.ok(new ApiResponse<>(true, "Success", Collections.emptyList()));
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ADMIN', 'TICKET_MANAGE', 'MANAGE_TICKET')")
+    public ApiResponse<PageResponse<CancelRequestResponse>> search(@RequestParam(required = false) String status,
+            @RequestParam(required = false) Long bookingId, @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return new ApiResponse<>(true, "Success", service.search(status, bookingId, page, size));
+    }
+
+    @GetMapping("/mine")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ApiResponse<PageResponse<CancelRequestResponse>> mine(@RequestParam(required = false) String status,
+            @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
+        return new ApiResponse<>(true, "Success", service.mine(status, page, size));
+    }
+
+    @GetMapping("/mine/{id}")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ApiResponse<CancelRequestResponse> myDetail(@PathVariable Long id) {
+        return new ApiResponse<>(true, "Success", service.myDetail(id));
+    }
+
+    @GetMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ADMIN', 'TICKET_MANAGE', 'MANAGE_TICKET')")
+    public ApiResponse<CancelRequestResponse> detail(@PathVariable Long id) {
+        return new ApiResponse<>(true, "Success", service.detail(id));
     }
 
     @PatchMapping("/{id}/resolve")
-    public ResponseEntity<ApiResponse<CancelRequest>> resolveCancelRequest(@PathVariable Long id, @RequestBody Map<String, Object> body) {
-        UUID staffId = UUID.randomUUID(); // Mocking authenticated staff ID
-        boolean isApproved = (boolean) body.getOrDefault("isApproved", false);
-        String rejectReason = (String) body.getOrDefault("rejectReason", "");
-        
-        CancelRequest request = cancelRequestService.resolveCancelRequest(id, staffId, isApproved, rejectReason);
-        return ResponseEntity.ok(new ApiResponse<>(true, "Request resolved", request));
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ADMIN', 'TICKET_MANAGE', 'MANAGE_TICKET')")
+    public ApiResponse<CancelRequestResponse> resolve(@PathVariable Long id, @Valid @RequestBody ResolveCancelRequest request) {
+        return new ApiResponse<>(true, "Request resolved", CancelRequestResponse.from(service.resolveCancelRequest(
+                id, currentUser.getCurrentStaff().getId(), request.isApproved(), request.rejectReason())));
     }
 }
