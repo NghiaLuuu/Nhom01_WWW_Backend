@@ -28,9 +28,9 @@ public class TripController {
 
     @GetMapping("/search")
     public ResponseEntity<ApiResponse<List<Trip>>> searchTrips(
-            @RequestParam String departureLocation,
-            @RequestParam String arrivalLocation,
-            @RequestParam String date) {
+            @RequestParam(required = false) String departureLocation,
+            @RequestParam(required = false) String arrivalLocation,
+            @RequestParam(required = false) String date) {
         return ResponseEntity.ok(new ApiResponse<>(true, "Success", tripService.searchTrips(departureLocation, arrivalLocation, date)));
     }
 
