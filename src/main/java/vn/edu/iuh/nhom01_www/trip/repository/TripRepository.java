@@ -3,12 +3,17 @@ package vn.edu.iuh.nhom01_www.trip.repository;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import vn.edu.iuh.nhom01_www.route.model.Route;
 import vn.edu.iuh.nhom01_www.trip.model.Trip;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
 public interface TripRepository extends JpaRepository<Trip, Long> {
+
+    List<Trip> findByRoute(Route route);
+
+    List<Trip> findByRoute_Id(Long routeId);
 
     @Query("SELECT t FROM Trip t " +
            "WHERE t.route.id = :routeId " +

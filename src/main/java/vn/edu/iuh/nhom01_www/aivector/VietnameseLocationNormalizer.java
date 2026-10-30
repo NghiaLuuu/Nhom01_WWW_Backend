@@ -18,7 +18,23 @@ final class VietnameseLocationNormalizer {
             Map.entry("thanh pho ho chi minh", "tp hcm"),
             Map.entry("tp hcm", "tp hcm"),
             Map.entry("tphcm", "tp hcm"),
-            Map.entry("hcm", "tp hcm"));
+            Map.entry("hcm", "tp hcm"),
+            Map.entry("tuy hoa", "phu yen"),
+            Map.entry("phu yen", "phu yen"),
+            Map.entry("tinh phu yen", "phu yen"),
+            Map.entry("tp tuy hoa", "phu yen"),
+            Map.entry("ha noi", "ha noi"),
+            Map.entry("thu do", "ha noi"),
+            Map.entry("da lat", "da lat"),
+            Map.entry("nha trang", "nha trang"),
+            Map.entry("da nang", "da nang"),
+            Map.entry("can tho", "can tho"),
+            Map.entry("vung tau", "vung tau"),
+            Map.entry("quy nhon", "quy nhon"),
+            Map.entry("ha long", "ha long"),
+            Map.entry("hai phong", "hai phong"),
+            Map.entry("sapa", "sapa"),
+            Map.entry("sa pa", "sapa"));
 
     String normalize(String location) {
         if (location == null || location.isBlank()) {

@@ -1,6 +1,7 @@
 package vn.edu.iuh.nhom01_www.recommendation.model;
 
 public enum PersonaType {
+    COMMUTER_HABIT("Hội di chuyển tuyến cố định & Khứ hồi", "Khách hàng thường xuyên đi lại giữa 2 địa phương quen thuộc (đi làm, về quê, công tác)"),
     DALAT_LIMOUSINE("Hội đam mê phượt Đà Lạt Limousine", "Khách hàng ưu tiên xe VIP Limousine, giờ xuất phát buổi tối (20h-23h) đi Đà Lạt"),
     NHATRANG_FAMILY("Hội du lịch gia đình & công tác Nha Trang", "Khách hàng chuộng xe giường nằm cao cấp, đi ban ngày, chú trọng an toàn tiện nghi"),
     BUDGET_SAVER("Hội sinh viên & du lịch tiết kiệm", "Khách hàng quan tâm mức giá tốt nhất, ưu tiên chuyến xe phổ thông tiết kiệm"),
@@ -22,4 +23,3 @@ public enum PersonaType {
         return description;
     }
 }
-

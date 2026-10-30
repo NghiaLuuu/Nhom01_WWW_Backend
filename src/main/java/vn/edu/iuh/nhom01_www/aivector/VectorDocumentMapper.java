@@ -8,6 +8,7 @@ import vn.edu.iuh.nhom01_www.route.model.Route;
 import vn.edu.iuh.nhom01_www.trip.model.Trip;
 import vn.edu.iuh.nhom01_www.vehicle.model.Vehicle;
 
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -34,6 +35,9 @@ public class VectorDocumentMapper {
             return Optional.empty();
         }
 
+        String depNorm = locationNormalizer.normalize(route.getDepartureLocation());
+        String arrNorm = locationNormalizer.normalize(route.getArrivalLocation());
+
         StringBuilder content = new StringBuilder("Thông tin tuyến xe\n")
                 .append("Mã tuyến nội bộ: ").append(route.getId()).append('\n')
                 .append("Điểm đi: ").append(route.getDepartureLocation().trim()).append('\n')
@@ -49,12 +53,17 @@ public class VectorDocumentMapper {
             content.append("\nTrạng thái tuyến: ").append(route.getStatus() ? "đang hoạt động" : "tạm dừng");
         }
 
-        return source("route", route.getId(), content.toString(), Map.of(
-                "routeId", route.getId().toString(),
-                "departureLocation", route.getDepartureLocation().trim(),
-                "arrivalLocation", route.getArrivalLocation().trim(),
-                "departureLocationNormalized", locationNormalizer.normalize(route.getDepartureLocation()),
-                "arrivalLocationNormalized", locationNormalizer.normalize(route.getArrivalLocation())));
+        Map<String, String> meta = new LinkedHashMap<>();
+        meta.put("routeId", route.getId().toString());
+        meta.put("departureLocation", route.getDepartureLocation().trim());
+        meta.put("arrivalLocation", route.getArrivalLocation().trim());
+        meta.put("departureLocationNormalized", depNorm);
+        meta.put("arrivalLocationNormalized", arrNorm);
+        meta.put("corridor", resolveCorridor(depNorm, arrNorm));
+        meta.put("departureRegion", resolveRegion(depNorm));
+        meta.put("arrivalRegion", resolveRegion(arrNorm));
+
+        return source("route", route.getId(), content.toString(), meta);
     }
 
     public Optional<VectorSourceDocument> map(Trip trip) {
@@ -63,6 +72,9 @@ public class VectorDocumentMapper {
                 || isBlank(trip.getRoute().getArrivalLocation())) {
             return Optional.empty();
         }
+
+        String depNorm = locationNormalizer.normalize(trip.getRoute().getDepartureLocation());
+        String arrNorm = locationNormalizer.normalize(trip.getRoute().getArrivalLocation());
 
         StringBuilder content = new StringBuilder("Thông tin chuyến xe\n")
                 .append("Mã chuyến nội bộ: ").append(trip.getId()).append('\n')
@@ -80,10 +92,20 @@ public class VectorDocumentMapper {
         Map<String, String> identifiers = new LinkedHashMap<>();
         identifiers.put("tripId", trip.getId().toString());
         identifiers.put("routeId", trip.getRoute().getId().toString());
-        identifiers.put("departureLocationNormalized", locationNormalizer.normalize(trip.getRoute().getDepartureLocation()));
-        identifiers.put("arrivalLocationNormalized", locationNormalizer.normalize(trip.getRoute().getArrivalLocation()));
+        identifiers.put("departureLocationNormalized", depNorm);
+        identifiers.put("arrivalLocationNormalized", arrNorm);
+        identifiers.put("corridor", resolveCorridor(depNorm, arrNorm));
+        identifiers.put("departureRegion", resolveRegion(depNorm));
+        identifiers.put("arrivalRegion", resolveRegion(arrNorm));
+        if (trip.getPrice() != null) {
+            identifiers.put("priceCategory", trip.getPrice().compareTo(BigDecimal.valueOf(200000)) <= 0 ? "BUDGET"
+                    : (trip.getPrice().compareTo(BigDecimal.valueOf(320000)) <= 0 ? "STANDARD" : "PREMIUM"));
+        }
         if (trip.getVehicle() != null && trip.getVehicle().getId() != null) {
             identifiers.put("vehicleId", trip.getVehicle().getId().toString());
+            if (trip.getVehicle().getType() != null) {
+                identifiers.put("vehicleType", trip.getVehicle().getType());
+            }
         }
         return source("trip", trip.getId(), content.toString(), identifiers);
     }
@@ -106,6 +128,27 @@ public class VectorDocumentMapper {
         }
 
         return source("vehicle", vehicle.getId(), content.toString(), Map.of("vehicleId", vehicle.getId().toString()));
+    }
+
+    private String resolveCorridor(String depNorm, String arrNorm) {
+        String s1 = depNorm.replaceAll("[^a-z0-9]+", "_");
+        String s2 = arrNorm.replaceAll("[^a-z0-9]+", "_");
+        return (s1 + "_" + s2).toUpperCase(Locale.ROOT);
+    }
+
+    private String resolveRegion(String locationNorm) {
+        if (locationNorm.contains("tp hcm") || locationNorm.contains("vung tau") || locationNorm.contains("can tho")) {
+            return "SOUTH";
+        }
+        if (locationNorm.contains("phu yen") || locationNorm.contains("da lat") || locationNorm.contains("nha trang")
+                || locationNorm.contains("da nang") || locationNorm.contains("hue") || locationNorm.contains("quy nhon")) {
+            return "CENTRAL";
+        }
+        if (locationNorm.contains("ha noi") || locationNorm.contains("sapa") || locationNorm.contains("ha long")
+                || locationNorm.contains("hai phong")) {
+            return "NORTH";
+        }
+        return "GENERAL";
     }
 
     private Optional<VectorSourceDocument> source(String sourceType, Long sourceId, String content, Map<String, String> identifiers) {
@@ -138,12 +181,18 @@ public class VectorDocumentMapper {
     private void appendSearchAliases(StringBuilder content, String departure, String arrival) {
         String normalizedDeparture = locationNormalizer.normalize(departure);
         String normalizedArrival = locationNormalizer.normalize(arrival);
-        if (!normalizedDeparture.equals(locationNormalizer.normalize("TP.HCM"))) {
-            return;
-        }
-        content.append("\nTên gọi tương đương điểm đi: Sài Gòn, Thành phố Hồ Chí Minh");
-        if (normalizedArrival.equals(locationNormalizer.normalize("Đà Lạt"))) {
-            content.append("\nÝ định tìm kiếm tuyến: từ Sài Gòn đến Đà Lạt");
+        if (normalizedDeparture.equals(locationNormalizer.normalize("TP.HCM"))) {
+            content.append("\nTên gọi tương đương điểm đi: Sài Gòn, Thành phố Hồ Chí Minh");
+            if (normalizedArrival.equals(locationNormalizer.normalize("Đà Lạt"))) {
+                content.append("\nÝ định tìm kiếm tuyến: từ Sài Gòn đến Đà Lạt");
+            } else if (normalizedArrival.equals(locationNormalizer.normalize("Phú Yên"))) {
+                content.append("\nÝ định tìm kiếm tuyến: từ Sài Gòn về Phú Yên Tuy Hòa");
+            }
+        } else if (normalizedDeparture.equals(locationNormalizer.normalize("Phú Yên"))) {
+            content.append("\nTên gọi tương đương điểm đi: Tuy Hòa, Tỉnh Phú Yên");
+            if (normalizedArrival.equals(locationNormalizer.normalize("TP.HCM"))) {
+                content.append("\nÝ định tìm kiếm tuyến: từ Phú Yên vào Sài Gòn TP.HCM");
+            }
         }
     }
 
