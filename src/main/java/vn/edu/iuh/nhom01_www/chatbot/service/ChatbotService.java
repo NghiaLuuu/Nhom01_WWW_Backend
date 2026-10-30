@@ -64,15 +64,47 @@ public class ChatbotService {
             return Map.of("answer", securityRefusal, "matchedCount", 0);
         }
 
-        // Stage 1: Greeting detection (Always answers greeting naturally, even with previous history)
+        // Stage 1: Natural Conversational Intent Handling (Fast, empathetic, context-aware)
+        if (isIdentityQuestion(userQuestion)) {
+            return Map.of("answer",
+                    "Dạ em là **Trợ lý AI của hệ thống VEXE** 🚌.\n\n" +
+                    "Em được lập trình chuyên sâu để hỗ trợ anh/chị:\n" +
+                    "- 🔍 **Tra cứu chuyến xe liên tỉnh**: Tìm kiếm lịch chạy, điểm đón/trả và lộ trình xe trên toàn quốc.\n" +
+                    "- 💰 **So sánh giá vé & loại xe**: Cung cấp thông tin giá vé niêm yết cho các dòng xe Ghế ngồi, Giường nằm và Limousine VIP.\n" +
+                    "- 🎫 **Gợi ý đặt chỗ nhanh**: Hỗ trợ tìm chuyến phù hợp với khung giờ và ngân sách của anh/chị.\n\n" +
+                    "Anh/chị đang có kế hoạch đi đâu, hãy chia sẻ điểm đi và điểm đến để em hỗ trợ nhé!");
+        }
+
+        if (isConfusionOrEmotional(userQuestion)) {
+            return Map.of("answer",
+                    "Dạ em xin lỗi nếu câu trả lời vừa rồi chưa rõ ràng hoặc làm anh/chị bối rối ạ! 😅\n\n" +
+                    "Em là trợ lý AI chuyên hỗ trợ tra cứu lịch trình và giá vé xe khách của **VEXE**. Anh/chị đang cần tìm chuyến xe đi đâu hoặc có câu hỏi nào về vé xe, lộ trình, giá cả cần em giải đáp không ạ? Hãy chia sẻ với em nhé!");
+        }
+
+        if (isGratitude(userQuestion)) {
+            return Map.of("answer",
+                    "Dạ không có gì ạ! Rất vui được hỗ trợ anh/chị. Chúc anh/chị có những chuyến đi thượng lộ bình an và thoải mái cùng VEXE! Nếu cần tìm thêm chuyến xe nào khác, anh/chị cứ nhắn em nhé! 😊");
+        }
+
+        if (isFarewell(userQuestion)) {
+            return Map.of("answer",
+                    "Dạ tạm biệt anh/chị! Chúc anh/chị một ngày thật nhiều niềm vui và hẹn gặp lại trên những hành trình tiếp theo của VEXE! 👋");
+        }
+
+        if (isBookingGuide(userQuestion)) {
+            return Map.of("answer",
+                    "Để đặt vé nhanh chóng tại **VEXE**, anh/chị chỉ cần thực hiện 3 bước đơn giản:\n\n" +
+                    "1. 🔍 **Tìm chuyến**: Nhập điểm đi, điểm đến và ngày khởi hành mong muốn tại thanh tìm kiếm.\n" +
+                    "2. 💺 **Chọn chỗ ngồi**: Xem sơ đồ ghế trực quan và chọn vị trí ghế/giường yêu thích.\n" +
+                    "3. 💳 **Xác nhận & Thanh toán**: Điền thông tin hành khách và thanh toán tiện lợi để nhận mã vé điện tử ngay tức thì.\n\n" +
+                    "Anh/chị đang muốn đặt vé đi đâu, hãy cho em biết điểm đi và điểm đến để em tra cứu giúp mình nhé!");
+        }
+
         if (isGreeting(userQuestion)) {
             return Map.of("answer",
-                    "**Xin chào!** Em là trợ lý AI của hệ thống vé xe **VEXE**.\n\n" +
-                    "Em có thể giúp anh/chị:\n" +
-                    "- 🔍 **Tra cứu chuyến xe**: *\"Có xe nào từ Sài Gòn đi Đà Lạt tối nay không?\"*\n" +
-                    "- 💰 **Tham khảo giá vé & loại xe**: *\"Xe Limousine đi Nha Trang giá bao nhiêu?\"*\n" +
-                    "- 🎫 **Hỗ trợ đặt vé**: *\"Tôi muốn đặt vé chuyến 8h sáng mai đi Vũng Tàu\"*\n\n" +
-                    "Anh/chị đang có kế hoạch đi đâu, hãy nhắn cho em biết nhé!");
+                    "**Xin chào anh/chị!** Em là trợ lý VEXE 🚌.\n" +
+                    "Em có thể giúp anh/chị tra cứu lịch trình chuyến xe, giá vé hoặc hướng dẫn đặt chỗ nhanh chóng.\n\n" +
+                    "Anh/chị đang có kế hoạch đi đâu hôm nay ạ?");
         }
 
         // Stage 2: Intent-Aware Partitioned Vector Search in PostgreSQL pgvector
@@ -209,11 +241,47 @@ public class ChatbotService {
         return null;
     }
 
+    private boolean isIdentityQuestion(String question) {
+        String lower = question.toLowerCase(Locale.ROOT).trim();
+        List<String> keywords = List.of(
+                "bạn là ai", "em là ai", "mày là ai", "ai đấy", "ai đó", "bạn tên gì", "who are you",
+                "giới thiệu bản thân", "bạn làm được gì", "bot là gì"
+        );
+        return keywords.stream().anyMatch(k -> lower.equals(k) || lower.contains(k));
+    }
+
+    private boolean isConfusionOrEmotional(String question) {
+        String lower = question.toLowerCase(Locale.ROOT).trim();
+        List<String> keywords = List.of(
+                "???", "??", "?", "sao thế", "sao vậy", "sao kì vậy", "kì vậy", "gì vậy",
+                "gì kì vậy", "sao lạ vậy", "hả", "sao cơ", "thế à", "bot ngáo à", "lỗi à"
+        );
+        return keywords.stream().anyMatch(k -> lower.equals(k) || lower.startsWith(k + " ") || lower.endsWith(" " + k));
+    }
+
+    private boolean isGratitude(String question) {
+        String lower = question.toLowerCase(Locale.ROOT).trim();
+        List<String> keywords = List.of("cảm ơn", "thank you", "thanks", "cảm ơn bạn", "cảm ơn em", "tks");
+        return keywords.stream().anyMatch(k -> lower.equals(k) || lower.startsWith(k + " ") || lower.endsWith(" " + k));
+    }
+
+    private boolean isFarewell(String question) {
+        String lower = question.toLowerCase(Locale.ROOT).trim();
+        List<String> keywords = List.of("tạm biệt", "bye", "goodbye", "hẹn gặp lại", "bai");
+        return keywords.stream().anyMatch(k -> lower.equals(k) || lower.startsWith(k + " ") || lower.endsWith(" " + k));
+    }
+
+    private boolean isBookingGuide(String question) {
+        String lower = question.toLowerCase(Locale.ROOT).trim();
+        List<String> keywords = List.of("cách đặt vé", "làm sao để đặt vé", "hướng dẫn đặt vé", "các bước đặt vé", "mua vé thế nào");
+        return keywords.stream().anyMatch(k -> lower.equals(k) || lower.contains(k));
+    }
+
     private boolean isGreeting(String question) {
         String lower = question.toLowerCase(Locale.ROOT).trim();
         List<String> greetings = List.of(
                 "xin chào", "chào bạn", "chào em", "chào bot", "chào", "hello", "hi", "hey",
-                "bạn là ai", "ai đó", "alo", "start", "bắt đầu"
+                "alo", "start", "bắt đầu"
         );
         return greetings.stream().anyMatch(g -> lower.equals(g) || lower.startsWith(g + " ") || lower.endsWith(" " + g));
     }
@@ -321,25 +389,60 @@ public class ChatbotService {
      * ensuring zero downtime and providing booking buttons.
      */
     public String buildDomainFallbackAnswer(String userQuestion, String ragContext) {
-        String lower = userQuestion.toLowerCase(Locale.ROOT);
+        String lower = userQuestion.toLowerCase(Locale.ROOT).trim();
 
-        // 1. General Greeting
-        if (isGreeting(userQuestion)) {
-            return "**Xin chào!** Em là trợ lý AI của hệ thống vé xe **VEXE**.\n\n" +
-                    "Em có thể giúp anh/chị tra cứu chuyến xe, giá vé và hướng dẫn đặt vé nhanh chóng.\n" +
-                    "Anh/chị đang có kế hoạch đi đâu, hãy nhắn cho em biết nhé!";
+        // 1. Identity & capabilities
+        if (isIdentityQuestion(userQuestion)) {
+            return "Dạ em là **Trợ lý AI của hệ thống VEXE** 🚌.\n\n" +
+                    "Em được lập trình chuyên sâu để hỗ trợ anh/chị:\n" +
+                    "- 🔍 **Tra cứu chuyến xe liên tỉnh**: Tìm kiếm lịch chạy, điểm đón/trả và lộ trình xe trên toàn quốc.\n" +
+                    "- 💰 **So sánh giá vé & loại xe**: Cung cấp thông tin giá vé niêm yết cho các dòng xe Ghế ngồi, Giường nằm và Limousine VIP.\n" +
+                    "- 🎫 **Gợi ý đặt chỗ nhanh**: Hỗ trợ tìm chuyến phù hợp với khung giờ và ngân sách của anh/chị.\n\n" +
+                    "Anh/chị đang có kế hoạch đi đâu, hãy chia sẻ điểm đi và điểm đến để em hỗ trợ nhé!";
         }
 
-        // 2. Policy / Refund / Cancellation question
+        // 2. Confusion / Emotional / Short queries
+        if (isConfusionOrEmotional(userQuestion)) {
+            return "Dạ em xin lỗi nếu câu trả lời vừa rồi chưa rõ ràng hoặc làm anh/chị bối rối ạ! 😅\n\n" +
+                    "Em là trợ lý AI chuyên hỗ trợ tra cứu lịch trình và giá vé xe khách của **VEXE**. Anh/chị đang cần tìm chuyến xe đi đâu hoặc có câu hỏi nào về vé xe, lộ trình, giá cả cần em giải đáp không ạ? Hãy chia sẻ với em nhé!";
+        }
+
+        // 3. Gratitude
+        if (isGratitude(userQuestion)) {
+            return "Dạ không có gì ạ! Rất vui được hỗ trợ anh/chị. Chúc anh/chị có những chuyến đi thượng lộ bình an và thoải mái cùng VEXE! Nếu cần tìm thêm chuyến xe nào khác, anh/chị cứ nhắn em nhé! 😊";
+        }
+
+        // 4. Farewell
+        if (isFarewell(userQuestion)) {
+            return "Dạ tạm biệt anh/chị! Chúc anh/chị một ngày thật nhiều niềm vui và hẹn gặp lại trên những hành trình tiếp theo của VEXE! 👋";
+        }
+
+        // 5. Booking Guide
+        if (isBookingGuide(userQuestion)) {
+            return "Để đặt vé nhanh chóng tại **VEXE**, anh/chị chỉ cần thực hiện 3 bước đơn giản:\n\n" +
+                    "1. 🔍 **Tìm chuyến**: Nhập điểm đi, điểm đến và ngày khởi hành mong muốn tại thanh tìm kiếm.\n" +
+                    "2. 💺 **Chọn chỗ ngồi**: Xem sơ đồ ghế trực quan và chọn vị trí ghế/giường yêu thích.\n" +
+                    "3. 💳 **Xác nhận & Thanh toán**: Điền thông tin hành khách và thanh toán tiện lợi để nhận mã vé điện tử ngay tức thì.\n\n" +
+                    "Anh/chị đang muốn đặt vé đi đâu, hãy cho em biết điểm đi và điểm đến để em tra cứu giúp mình nhé!";
+        }
+
+        // 6. General Greeting
+        if (isGreeting(userQuestion)) {
+            return "Dạ chào anh/chị! Em là trợ lý VEXE 🚌.\n" +
+                    "Em có thể giúp anh/chị tra cứu lịch trình chuyến xe, giá vé hoặc hướng dẫn đặt chỗ nhanh chóng.\n\n" +
+                    "Anh/chị đang có kế hoạch đi đâu hôm nay ạ?";
+        }
+
+        // 7. Policy / Refund / Cancellation question
         if (lower.contains("chính sách") || lower.contains("hủy vé") || lower.contains("đổi vé") 
-                || lower.contains("hoàn tiền") || lower.contains("đổi trả")) {
+                || lower.contains("hoàn tiền") || lower.contains("đổi trả") || lower.contains("trả vé")) {
             return "Dạ về **Chính sách Đổi trả & Hoàn tiền của VEXE**:\n\n" +
                     "- 🛡️ **Cam kết bảo vệ 100%**: Hoàn tiền **150%** nếu nhà xe tự ý hủy chuyến hoặc không có xe.\n" +
-                    "- 🎫 **Hủy vé linh hoạt**: Quý khách có thể yêu cầu hủy vé trực tiếp trong trang **Hồ sơ cá nhân > Lịch sử đặt vé**.\n" +
+                    "- 🎫 **Hủy vé linh hoạt**: Quý khách có thể yêu cầu hủy vé trực tiếp trong trang **Hồ sơ cá nhân > Vé của tôi**.\n" +
                     "- ⏰ **Thời gian**: Vui lòng yêu cầu hủy trước giờ khởi hành tối thiểu 4 tiếng để được xử lý hoàn tiền nhanh nhất qua tài khoản ngân hàng ạ.";
         }
 
-        // 3. Price question
+        // 8. General Price question
         if (lower.contains("bảng giá") || lower.contains("giá bao nhiêu") || lower.contains("giá vé chung")) {
             return "Dạ **giá vé xe tại VEXE** được niêm yết rõ ràng, không phụ thu bất ngờ:\n\n" +
                     "- 💺 **Xe ghế ngồi cao cấp**: từ **160.000 VNĐ** / vé\n" +
@@ -348,7 +451,7 @@ public class ChatbotService {
                     "Anh/chị muốn tra cứu giá vé tuyến nào cụ thể để em kiểm tra ngay ạ?";
         }
 
-        // 4. Destination search: Check if question mentions any province/city
+        // 9. Destination search: Check if question mentions any province/city
         String detectedDestination = null;
         if (lower.contains("đà lạt") || lower.contains("da lat")) detectedDestination = "Đà Lạt";
         else if (lower.contains("nha trang")) detectedDestination = "Nha Trang";
@@ -357,7 +460,11 @@ public class ChatbotService {
         else if (lower.contains("đà nẵng") || lower.contains("da nang")) detectedDestination = "Đà Nẵng";
         else if (lower.contains("hà nội") || lower.contains("ha noi")) detectedDestination = "Hà Nội";
         else if (lower.contains("hạ long") || lower.contains("ha long")) detectedDestination = "Hạ Long";
-        else if (lower.contains("sài gòn") || lower.contains("tp.hcm") || lower.contains("tphcm")) detectedDestination = "TP.HCM";
+        else if (lower.contains("sài gòn") || lower.contains("tp.hcm") || lower.contains("tphcm") || lower.contains("hồ chí minh")) detectedDestination = "TP.HCM";
+        else if (lower.contains("sapa") || lower.contains("sa pa")) detectedDestination = "Sapa";
+        else if (lower.contains("quy nhơn") || lower.contains("quy nhon")) detectedDestination = "Quy Nhơn";
+        else if (lower.contains("phan thiết") || lower.contains("phan thiet")) detectedDestination = "Phan Thiết";
+        else if (lower.contains("huế") || lower.contains("hue")) detectedDestination = "Huế";
 
         List<Trip> trips = Collections.emptyList();
         try {
@@ -373,39 +480,62 @@ public class ChatbotService {
                     matchingTrips.add(t);
                 }
             }
-        }
 
-        if (matchingTrips.isEmpty() && !trips.isEmpty()) {
-            matchingTrips = trips.stream().limit(3).collect(Collectors.toList());
-        }
-
-        if (!matchingTrips.isEmpty()) {
-            StringBuilder sb = new StringBuilder();
-            if (detectedDestination != null) {
+            if (!matchingTrips.isEmpty()) {
+                StringBuilder sb = new StringBuilder();
                 sb.append("Dạ chào anh/chị! Dưới đây là các chuyến xe đến **").append(detectedDestination)
                   .append("** đang có sẵn trên hệ thống VEXE để anh/chị lựa chọn:\n\n");
+
+                for (Trip t : matchingTrips.stream().limit(3).collect(Collectors.toList())) {
+                    String dep = t.getRoute() != null ? t.getRoute().getDepartureLocation() : "N/A";
+                    String arr = t.getRoute() != null ? t.getRoute().getArrivalLocation() : "N/A";
+                    String vehicleType = t.getVehicle() != null ? t.getVehicle().getType() : "Tiêu chuẩn";
+                    int capacity = t.getVehicle() != null ? t.getVehicle().getCapacity() : 34;
+                    String priceStr = t.getPrice() != null ? CURRENCY_FORMATTER.format(t.getPrice()) + " VNĐ" : "250.000 VNĐ";
+                    String timeStr = t.getDepartureTime() != null ? TIME_FORMATTER.format(t.getDepartureTime()) : "Hôm nay";
+
+                    sb.append("- 🚌 **Chuyến #").append(t.getId()).append("**: ").append(dep).append(" ➔ ").append(arr).append("\n")
+                      .append("  • Khởi hành: **").append(timeStr).append("**\n")
+                      .append("  • Loại xe: ").append(vehicleType).append(" (").append(capacity).append(" chỗ/giường)\n")
+                      .append("  • Giá vé niêm yết: **").append(priceStr).append("**\n")
+                      .append("  • [[BOOK_TRIP_ID:").append(t.getId()).append("]]\n\n");
+                }
+                sb.append("Anh/chị có thể bấm vào nút **Đặt vé ngay** ở từng chuyến hoặc cho em biết ngày giờ khởi hành mong muốn để em tư vấn thêm nhé!");
+                return sb.toString();
             } else {
-                sb.append("Dạ chào anh/chị! Hệ thống VEXE đang có các chuyến xe nổi bật sau được nhiều khách hàng yêu thích:\n\n");
+                return "Dạ hiện tại hệ thống VEXE chưa tìm thấy chuyến xe nào đến **" + detectedDestination + "** trong thời gian này. Anh/chị có thể vào trang **[Tra cứu chuyến xe](http://localhost:5173/search)** để chọn ngày khác, hoặc liên hệ Hotline 24/7 **1900 1234** để được tổng đài viên kiểm tra thêm lịch xe tăng cường nhé!";
             }
-
-            for (Trip t : matchingTrips.stream().limit(3).collect(Collectors.toList())) {
-                String dep = t.getRoute() != null ? t.getRoute().getDepartureLocation() : "N/A";
-                String arr = t.getRoute() != null ? t.getRoute().getArrivalLocation() : "N/A";
-                String vehicleType = t.getVehicle() != null ? t.getVehicle().getType() : "Tiêu chuẩn";
-                int capacity = t.getVehicle() != null ? t.getVehicle().getCapacity() : 34;
-                String priceStr = t.getPrice() != null ? CURRENCY_FORMATTER.format(t.getPrice()) + " VNĐ" : "250.000 VNĐ";
-                String timeStr = t.getDepartureTime() != null ? TIME_FORMATTER.format(t.getDepartureTime()) : "Hôm nay";
-
-                sb.append("- 🚌 **Chuyến #").append(t.getId()).append("**: ").append(dep).append(" ➔ ").append(arr).append("\n")
-                  .append("  • Khởi hành: **").append(timeStr).append("**\n")
-                  .append("  • Loại xe: ").append(vehicleType).append(" (").append(capacity).append(" chỗ/giường)\n")
-                  .append("  • Giá vé niêm yết: **").append(priceStr).append("**\n")
-                  .append("  • [[BOOK_TRIP_ID:").append(t.getId()).append("]]\n\n");
-            }
-            sb.append("Anh/chị có thể bấm vào nút **Đặt vé ngay** ở từng chuyến hoặc cho em biết ngày giờ khởi hành mong muốn để em tư vấn thêm nhé!");
-            return sb.toString();
         }
 
-        return "Dạ hiện tại em đã ghi nhận nhu cầu của anh/chị. Anh/chị có thể vào trang **Tra cứu chuyến xe** để lọc theo giá và giờ khởi hành, hoặc liên hệ Hotline 24/7 **1900 1234** để được tổng đài viên phục vụ ngay ạ!";
+        // 10. Question about trips in general (without specific destination)
+        if (lower.contains("xe") || lower.contains("chuyến") || lower.contains("vé") || lower.contains("đặt") || lower.contains("đi đâu")) {
+            if (lower.contains("nổi bật") || lower.contains("phổ biến") || lower.contains("hot") || lower.contains("gợi ý") || lower.contains("danh sách")) {
+                if (!trips.isEmpty()) {
+                    StringBuilder sb = new StringBuilder();
+                    sb.append("Dạ chào anh/chị! Hệ thống VEXE đang có các chuyến xe nổi bật sau được nhiều khách hàng yêu thích:\n\n");
+                    for (Trip t : trips.stream().limit(3).collect(Collectors.toList())) {
+                        String dep = t.getRoute() != null ? t.getRoute().getDepartureLocation() : "N/A";
+                        String arr = t.getRoute() != null ? t.getRoute().getArrivalLocation() : "N/A";
+                        String vehicleType = t.getVehicle() != null ? t.getVehicle().getType() : "Tiêu chuẩn";
+                        int capacity = t.getVehicle() != null ? t.getVehicle().getCapacity() : 34;
+                        String priceStr = t.getPrice() != null ? CURRENCY_FORMATTER.format(t.getPrice()) + " VNĐ" : "250.000 VNĐ";
+                        String timeStr = t.getDepartureTime() != null ? TIME_FORMATTER.format(t.getDepartureTime()) : "Hôm nay";
+
+                        sb.append("- 🚌 **Chuyến #").append(t.getId()).append("**: ").append(dep).append(" ➔ ").append(arr).append("\n")
+                          .append("  • Khởi hành: **").append(timeStr).append("**\n")
+                          .append("  • Loại xe: ").append(vehicleType).append(" (").append(capacity).append(" chỗ/giường)\n")
+                          .append("  • Giá vé niêm yết: **").append(priceStr).append("**\n")
+                          .append("  • [[BOOK_TRIP_ID:").append(t.getId()).append("]]\n\n");
+                    }
+                    sb.append("Anh/chị có thể bấm vào nút **Đặt vé ngay** ở từng chuyến hoặc cho em biết nơi muốn đến để em tra cứu chính xác nhé!");
+                    return sb.toString();
+                }
+            }
+
+            return "Dạ anh/chị muốn khởi hành từ đâu và đến tỉnh thành nào ạ? (Ví dụ: *'Tìm xe Sài Gòn đi Đà Lạt tối nay'* hoặc *'Hà Nội đi Sapa sáng mai'*) để em tra cứu chuyến xe và giá vé chính xác nhất cho mình nhé!";
+        }
+
+        // 11. General Unrecognized Query (Chitchat or out-of-scope)
+        return "Dạ em là trợ lý AI chuyên về **tra cứu lộ trình, giá vé và đặt vé xe khách** của VEXE. Anh/chị đang cần tìm chuyến xe từ đâu đến tỉnh thành nào ạ? Hãy chia sẻ với em để em tra cứu giúp mình nhé!";
     }
 }

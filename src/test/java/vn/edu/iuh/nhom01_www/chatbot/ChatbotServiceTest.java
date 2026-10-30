@@ -212,4 +212,46 @@ class ChatbotServiceTest {
         String answer = (String) response.get("answer");
         assertThat(answer).contains("Đà Lạt", "Chuyến #101", "[[BOOK_TRIP_ID:101]]");
     }
+
+    @Test
+    @DisplayName("Should answer identity questions naturally without repeating greeting")
+    void answersIdentityQuestionsNaturally() {
+        ChatbotRequest request = new ChatbotRequest();
+        request.setQuestion("bạn là ai");
+
+        Map<String, Object> result = chatbotService.ask(request, "khach@gmail.com");
+
+        assertThat((String) result.get("answer")).contains("Trợ lý AI của hệ thống VEXE", "Tra cứu chuyến xe liên tỉnh");
+        verifyNoInteractions(vectorSearchService);
+        verifyNoInteractions(chatModel);
+    }
+
+    @Test
+    @DisplayName("Should handle confusion or question marks politely without dumping random trips")
+    void handlesConfusionPolitely() {
+        ChatbotRequest request = new ChatbotRequest();
+        request.setQuestion("???");
+
+        Map<String, Object> result = chatbotService.ask(request, "khach@gmail.com");
+
+        assertThat((String) result.get("answer")).contains("xin lỗi nếu câu trả lời vừa rồi chưa rõ ràng");
+        assertThat((String) result.get("answer")).doesNotContain("Chuyến #");
+        verifyNoInteractions(vectorSearchService);
+        verifyNoInteractions(chatModel);
+    }
+
+    @Test
+    @DisplayName("Should respond to greeting even when chat history is present")
+    void respondsToGreetingWithHistory() {
+        ChatbotRequest request = new ChatbotRequest();
+        request.setQuestion("hello");
+        ChatbotRequest.ChatMessage historyItem = new ChatbotRequest.ChatMessage("assistant", "Xin chào! Em có thể giúp gì cho anh/chị?");
+        request.setHistory(List.of(historyItem));
+
+        Map<String, Object> result = chatbotService.ask(request, "khach@gmail.com");
+
+        assertThat((String) result.get("answer")).contains("Xin chào", "VEXE");
+        verifyNoInteractions(vectorSearchService);
+        verifyNoInteractions(chatModel);
+    }
 }
