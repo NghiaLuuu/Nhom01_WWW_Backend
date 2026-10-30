@@ -223,5 +223,46 @@ class TrackingServiceTest {
         assertThat(response.getVisitors()).hasSize(1);
         assertThat(response.getVisitors().get(0).getIpAddress()).isNotNull();
     }
+
+    @Test
+    @DisplayName("Should return live visitor detail with pageviews and actions")
+    void shouldReturnLiveVisitorDetail() {
+        when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(sampleSession));
+
+        PageView pv = PageView.builder()
+                .id(UUID.randomUUID())
+                .session(sampleSession)
+                .pageUrl("/search")
+                .pageTitle("Tìm chuyến xe Sài Gòn đi Đà Lạt")
+                .enteredAt(LocalDateTime.now().minusMinutes(2))
+                .activeDurationSeconds(45)
+                .idleDurationSeconds(10)
+                .build();
+
+        when(pageViewRepository.findBySessionIdOrderByEnteredAtAsc(sessionId))
+                .thenReturn(java.util.Collections.singletonList(pv));
+
+        UserAction act = UserAction.builder()
+                .id(UUID.randomUUID())
+                .session(sampleSession)
+                .actionType("SEARCH_TRIP")
+                .payload("{\"departure\":\"Sài Gòn\",\"destination\":\"Đà Lạt\"}")
+                .createdAt(LocalDateTime.now().minusMinutes(1))
+                .build();
+
+        when(actionRepository.findBySessionIdOrderByCreatedAtAsc(sessionId))
+                .thenReturn(java.util.Collections.singletonList(act));
+
+        vn.edu.iuh.nhom01_www.tracking.dto.LiveVisitorDetailDto detail =
+                trackingService.getLiveVisitorDetail(sessionId);
+
+        assertThat(detail).isNotNull();
+        assertThat(detail.getVisitor()).isNotNull();
+        assertThat(detail.getVisitor().getSessionId()).isEqualTo(sessionId.toString());
+        assertThat(detail.getPageViews()).hasSize(1);
+        assertThat(detail.getPageViews().get(0).getPageUrl()).isEqualTo("/search");
+        assertThat(detail.getActions()).hasSize(1);
+        assertThat(detail.getActions().get(0).getActionType()).isEqualTo("SEARCH_TRIP");
+    }
 }
 

@@ -629,101 +629,13 @@ public class TrackingServiceImpl implements vn.edu.iuh.nhom01_www.tracking.servi
         int guestCount = 0;
 
         for (UserSession s : activeSessions) {
-            boolean isRegistered = false;
-            String name = "Khách vãng lai";
-            String email = "Chưa đăng nhập";
-
-            if (s.getCustomerId() != null) {
-                Optional<Customer> c = customerRepository.findById(s.getCustomerId());
-                if (c.isPresent()) {
-                    isRegistered = true;
-                    name = c.get().getFullName();
-                    email = c.get().getEmail();
-                }
-            }
-
-            if (isRegistered) {
+            LiveVisitorDto dto = buildLiveVisitorDto(s);
+            if (dto.isRegisteredCustomer()) {
                 registeredCount++;
             } else {
                 guestCount++;
             }
-
-            // Detect Device
-            String ua = s.getUserAgent() != null ? s.getUserAgent() : "Unknown";
-            String deviceType = (ua.contains("Mobile") || ua.contains("Android") || ua.contains("iPhone"))
-                    ? "Mobile" : "Desktop";
-
-            // Current Page & Dwell
-            List<PageView> pvs = pageViewRepository.findBySessionIdOrderByEnteredAtAsc(s.getId());
-            PageView lastPv = pvs.isEmpty() ? null : pvs.get(pvs.size() - 1);
-            String pageUrl = lastPv != null ? lastPv.getPageUrl() : "/";
-            String pageTitle = lastPv != null ? lastPv.getPageTitle() : "Trang chủ";
-            int activeSec = (lastPv != null && lastPv.getActiveDurationSeconds() != null) ? lastPv.getActiveDurationSeconds() : 0;
-            int idleSec = (lastPv != null && lastPv.getIdleDurationSeconds() != null) ? lastPv.getIdleDurationSeconds() : 0;
-
-            // Last Action
-            List<UserAction> acts = actionRepository.findBySessionIdOrderByCreatedAtAsc(s.getId());
-            UserAction lastAct = acts.isEmpty() ? null : acts.get(acts.size() - 1);
-            String lastActType = lastAct != null ? lastAct.getActionType() : "ĐANG_XEM_TRANG";
-            String lastActPayload = lastAct != null ? lastAct.getPayload() : "";
-            String lastActivity = (lastAct != null && lastAct.getCreatedAt() != null)
-                    ? lastAct.getCreatedAt().format(ISO_FORMATTER)
-                    : (s.getEndTime() != null ? s.getEndTime().format(ISO_FORMATTER) : "");
-
-            // Recommendations
-            List<UserRecommendation> recs;
-            if (s.getCustomerId() != null) {
-                recs = recommendationRepository.findTop5ByCustomerIdOrderByCreatedAtDesc(s.getCustomerId());
-            } else {
-                recs = recommendationRepository.findTop5ByAnonymousIdOrderByCreatedAtDesc(s.getAnonymousId());
-            }
-
-            String persona = (!recs.isEmpty() && recs.get(0).getPersonaCluster() != null)
-                    ? recs.get(0).getPersonaCluster() : "POPULAR_TRENDING";
-
-            List<LiveVisitorDto.LiveRecommendedTripDto> tripDtos = new ArrayList<>();
-            for (UserRecommendation r : recs) {
-                if (r.getRecommendedTripId() != null) {
-                    tripRepository.findById(r.getRecommendedTripId()).ifPresent(t -> {
-                        String dep = t.getRoute() != null ? t.getRoute().getDepartureLocation() : "N/A";
-                        String arr = t.getRoute() != null ? t.getRoute().getArrivalLocation() : "N/A";
-                        String vType = t.getVehicle() != null ? t.getVehicle().getType() : "Limousine";
-                        String price = t.getPrice() != null ? java.text.NumberFormat.getInstance(new Locale("vi", "VN")).format(t.getPrice()) + " đ" : "N/A";
-                        String time = t.getDepartureTime() != null ? t.getDepartureTime().format(DateTimeFormatter.ofPattern("HH:mm dd/MM")) : "";
-
-                        tripDtos.add(LiveVisitorDto.LiveRecommendedTripDto.builder()
-                                .tripId(t.getId())
-                                .route(dep + " ➔ " + arr)
-                                .departureTime(time)
-                                .price(price)
-                                .vehicleType(vType)
-                                .build());
-                    });
-                }
-            }
-
-            visitorDtos.add(LiveVisitorDto.builder()
-                    .sessionId(s.getId().toString())
-                    .anonymousId(s.getAnonymousId())
-                    .customerId(s.getCustomerId() != null ? s.getCustomerId().toString() : null)
-                    .isRegisteredCustomer(isRegistered)
-                    .customerName(name)
-                    .customerEmail(email)
-                    .ipAddress(s.getIpAddress() != null ? s.getIpAddress() : "127.0.0.1")
-                    .userAgent(ua)
-                    .deviceType(deviceType)
-                    .trafficSource(s.getTrafficSource())
-                    .utmCampaign(s.getUtmCampaign())
-                    .currentPageUrl(pageUrl)
-                    .currentPageTitle(pageTitle)
-                    .activeSecondsOnPage(activeSec)
-                    .idleSecondsOnPage(idleSec)
-                    .lastActivityTime(lastActivity)
-                    .lastActionType(lastActType)
-                    .lastActionPayload(lastActPayload)
-                    .matchedPersona(persona)
-                    .recommendedTrips(tripDtos)
-                    .build());
+            visitorDtos.add(dto);
         }
 
         return LiveVisitorsSummaryResponse.builder()
@@ -732,6 +644,134 @@ public class TrackingServiceImpl implements vn.edu.iuh.nhom01_www.tracking.servi
                 .guestOnline(guestCount)
                 .checkedAt(LocalDateTime.now().format(ISO_FORMATTER))
                 .visitors(visitorDtos)
+                .build();
+    }
+
+    @Override
+    public LiveVisitorDetailDto getLiveVisitorDetail(UUID sessionId) {
+        UserSession s = sessionRepository.findById(sessionId)
+                .orElseThrow(() -> new IllegalArgumentException("Session not found: " + sessionId));
+
+        LiveVisitorDto visitorDto = buildLiveVisitorDto(s);
+        boolean isOnline = s.getEndTime() == null || s.getEndTime().isAfter(LocalDateTime.now().minusMinutes(10));
+
+        // Get all PageViews
+        List<PageView> pvs = pageViewRepository.findBySessionIdOrderByEnteredAtAsc(sessionId);
+        List<LiveVisitorDetailDto.SessionPageViewDto> pvDtos = pvs.stream().map(pv -> LiveVisitorDetailDto.SessionPageViewDto.builder()
+                .id(pv.getId() != null ? pv.getId().toString() : "")
+                .pageUrl(pv.getPageUrl())
+                .pageTitle(pv.getPageTitle() != null ? pv.getPageTitle() : pv.getPageUrl())
+                .enteredAt(pv.getEnteredAt() != null ? pv.getEnteredAt().format(ISO_FORMATTER) : "")
+                .activeSeconds(pv.getActiveDurationSeconds() != null ? pv.getActiveDurationSeconds() : 0)
+                .idleSeconds(pv.getIdleDurationSeconds() != null ? pv.getIdleDurationSeconds() : 0)
+                .build()).collect(Collectors.toList());
+
+        // Get all Actions
+        List<UserAction> acts = actionRepository.findBySessionIdOrderByCreatedAtAsc(sessionId);
+        List<LiveVisitorDetailDto.SessionActionDto> actDtos = acts.stream().map(a -> LiveVisitorDetailDto.SessionActionDto.builder()
+                .id(a.getId() != null ? a.getId().toString() : "")
+                .actionType(a.getActionType())
+                .payload(a.getPayload())
+                .createdAt(a.getCreatedAt() != null ? a.getCreatedAt().format(ISO_FORMATTER) : "")
+                .build()).collect(Collectors.toList());
+
+        return LiveVisitorDetailDto.builder()
+                .visitor(visitorDto)
+                .isOnline(isOnline)
+                .pageViews(pvDtos)
+                .actions(actDtos)
+                .build();
+    }
+
+    private LiveVisitorDto buildLiveVisitorDto(UserSession s) {
+        boolean isRegistered = false;
+        String name = "Khách vãng lai";
+        String email = "Chưa đăng nhập";
+
+        if (s.getCustomerId() != null) {
+            Optional<Customer> c = customerRepository.findById(s.getCustomerId());
+            if (c.isPresent()) {
+                isRegistered = true;
+                name = c.get().getFullName();
+                email = c.get().getEmail();
+            }
+        }
+
+        // Detect Device
+        String ua = s.getUserAgent() != null ? s.getUserAgent() : "Unknown";
+        String deviceType = (ua.contains("Mobile") || ua.contains("Android") || ua.contains("iPhone"))
+                ? "Mobile" : "Desktop";
+
+        // Current Page & Dwell
+        List<PageView> pvs = pageViewRepository.findBySessionIdOrderByEnteredAtAsc(s.getId());
+        PageView lastPv = pvs.isEmpty() ? null : pvs.get(pvs.size() - 1);
+        String pageUrl = lastPv != null ? lastPv.getPageUrl() : "/";
+        String pageTitle = lastPv != null ? lastPv.getPageTitle() : "Trang chủ";
+        int activeSec = (lastPv != null && lastPv.getActiveDurationSeconds() != null) ? lastPv.getActiveDurationSeconds() : 0;
+        int idleSec = (lastPv != null && lastPv.getIdleDurationSeconds() != null) ? lastPv.getIdleDurationSeconds() : 0;
+
+        // Last Action
+        List<UserAction> acts = actionRepository.findBySessionIdOrderByCreatedAtAsc(s.getId());
+        UserAction lastAct = acts.isEmpty() ? null : acts.get(acts.size() - 1);
+        String lastActType = lastAct != null ? lastAct.getActionType() : "ĐANG_XEM_TRANG";
+        String lastActPayload = lastAct != null ? lastAct.getPayload() : "";
+        String lastActivity = (lastAct != null && lastAct.getCreatedAt() != null)
+                ? lastAct.getCreatedAt().format(ISO_FORMATTER)
+                : (s.getEndTime() != null ? s.getEndTime().format(ISO_FORMATTER) : "");
+
+        // Recommendations
+        List<UserRecommendation> recs;
+        if (s.getCustomerId() != null) {
+            recs = recommendationRepository.findTop5ByCustomerIdOrderByCreatedAtDesc(s.getCustomerId());
+        } else {
+            recs = recommendationRepository.findTop5ByAnonymousIdOrderByCreatedAtDesc(s.getAnonymousId());
+        }
+
+        String persona = (!recs.isEmpty() && recs.get(0).getPersonaCluster() != null)
+                ? recs.get(0).getPersonaCluster() : "POPULAR_TRENDING";
+
+        List<LiveVisitorDto.LiveRecommendedTripDto> tripDtos = new ArrayList<>();
+        for (UserRecommendation r : recs) {
+            if (r.getRecommendedTripId() != null) {
+                tripRepository.findById(r.getRecommendedTripId()).ifPresent(t -> {
+                    String dep = t.getRoute() != null ? t.getRoute().getDepartureLocation() : "N/A";
+                    String arr = t.getRoute() != null ? t.getRoute().getArrivalLocation() : "N/A";
+                    String vType = t.getVehicle() != null ? t.getVehicle().getType() : "Limousine";
+                    String price = t.getPrice() != null ? java.text.NumberFormat.getInstance(new Locale("vi", "VN")).format(t.getPrice()) + " đ" : "N/A";
+                    String time = t.getDepartureTime() != null ? t.getDepartureTime().format(DateTimeFormatter.ofPattern("HH:mm dd/MM")) : "";
+
+                    tripDtos.add(LiveVisitorDto.LiveRecommendedTripDto.builder()
+                            .tripId(t.getId())
+                            .route(dep + " ➔ " + arr)
+                            .departureTime(time)
+                            .price(price)
+                            .vehicleType(vType)
+                            .build());
+                });
+            }
+        }
+
+        return LiveVisitorDto.builder()
+                .sessionId(s.getId().toString())
+                .anonymousId(s.getAnonymousId())
+                .customerId(s.getCustomerId() != null ? s.getCustomerId().toString() : null)
+                .isRegisteredCustomer(isRegistered)
+                .customerName(name)
+                .customerEmail(email)
+                .ipAddress(s.getIpAddress() != null ? s.getIpAddress() : "127.0.0.1")
+                .userAgent(ua)
+                .deviceType(deviceType)
+                .trafficSource(s.getTrafficSource())
+                .utmCampaign(s.getUtmCampaign())
+                .currentPageUrl(pageUrl)
+                .currentPageTitle(pageTitle)
+                .activeSecondsOnPage(activeSec)
+                .idleSecondsOnPage(idleSec)
+                .lastActivityTime(lastActivity)
+                .lastActionType(lastActType)
+                .lastActionPayload(lastActPayload)
+                .matchedPersona(persona)
+                .recommendedTrips(tripDtos)
                 .build();
     }
 }

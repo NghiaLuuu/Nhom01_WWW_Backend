@@ -53,3 +53,4 @@ public class LiveVisitorDto {
         private String vehicleType;
     }
 }
+

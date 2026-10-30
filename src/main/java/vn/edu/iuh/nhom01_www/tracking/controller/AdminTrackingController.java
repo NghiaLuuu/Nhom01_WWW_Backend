@@ -6,11 +6,14 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import vn.edu.iuh.nhom01_www.common.dto.ApiResponse;
 import vn.edu.iuh.nhom01_www.tracking.dto.CustomerJourneyTimelineDto;
+import vn.edu.iuh.nhom01_www.tracking.dto.LiveVisitorDetailDto;
+import vn.edu.iuh.nhom01_www.tracking.dto.LiveVisitorsSummaryResponse;
 import vn.edu.iuh.nhom01_www.tracking.dto.TrackingAnalyticsResponse;
 import vn.edu.iuh.nhom01_www.tracking.model.UserSession;
 import vn.edu.iuh.nhom01_www.tracking.service.TrackingService;
 
 import java.util.List;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/admin/tracking")
@@ -47,6 +50,14 @@ public class AdminTrackingController {
 
         vn.edu.iuh.nhom01_www.tracking.dto.LiveVisitorsSummaryResponse response = trackingService.getLiveVisitors(minutes);
         return ResponseEntity.ok(ApiResponse.success(response, "Live visitors fetched successfully"));
+    }
+
+    @GetMapping("/live-visitors/{sessionId}")
+    public ResponseEntity<ApiResponse<LiveVisitorDetailDto>> getLiveVisitorDetail(
+            @PathVariable UUID sessionId) {
+
+        LiveVisitorDetailDto detail = trackingService.getLiveVisitorDetail(sessionId);
+        return ResponseEntity.ok(ApiResponse.success(detail, "Live visitor detail fetched"));
     }
 }
 

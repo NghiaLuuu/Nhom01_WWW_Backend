@@ -18,3 +18,4 @@ public class LiveVisitorsSummaryResponse {
     private String checkedAt;
     private List<LiveVisitorDto> visitors;
 }
+

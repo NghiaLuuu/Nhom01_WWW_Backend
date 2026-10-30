@@ -27,5 +27,7 @@ public interface TrackingService {
     List<UserSession> getRecentSessions(int limit);
 
     LiveVisitorsSummaryResponse getLiveVisitors(int activeWindowMinutes);
+
+    LiveVisitorDetailDto getLiveVisitorDetail(UUID sessionId);
 }
 
