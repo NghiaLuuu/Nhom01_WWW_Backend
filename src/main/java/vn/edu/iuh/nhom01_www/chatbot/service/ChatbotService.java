@@ -330,11 +330,19 @@ public class ChatbotService {
         if (needsEnrichment) {
             List<Trip> allTrips = new ArrayList<>(tripRepository.findAll());
             if (!allTrips.isEmpty()) {
-                if (lower.contains("rẻ")) {
-                    allTrips.sort(Comparator.comparing((Trip t) -> t.getPrice() != null ? t.getPrice() : BigDecimal.valueOf(9999999)));
-                }
+                allTrips.sort((t1, t2) -> {
+                    int score1 = computeRelevance(t1, lower);
+                    int score2 = computeRelevance(t2, lower);
+                    if (score1 != score2) return Integer.compare(score2, score1);
+                    if (lower.contains("rẻ")) {
+                        BigDecimal p1 = t1.getPrice() != null ? t1.getPrice() : BigDecimal.valueOf(9999999);
+                        BigDecimal p2 = t2.getPrice() != null ? t2.getPrice() : BigDecimal.valueOf(9999999);
+                        return p1.compareTo(p2);
+                    }
+                    return 0;
+                });
                 context.append("\n[DỮ LIỆU CÁC CHUYẾN XE KHÁCH THỰC TẾ ĐANG BÁN VÉ TRÊN HỆ THỐNG VEXE]:\n");
-                for (Trip t : allTrips.stream().limit(8).collect(Collectors.toList())) {
+                for (Trip t : allTrips.stream().limit(10).collect(Collectors.toList())) {
                     if (processedTripIds.add(t.getId())) {
                         context.append(formatTripDetails(t)).append("\n---\n");
                     }
@@ -469,6 +477,7 @@ public class ChatbotService {
         // 9. Destination search: Check if question mentions any province/city
         String detectedDestination = null;
         if (lower.contains("đà lạt") || lower.contains("da lat")) detectedDestination = "Đà Lạt";
+        else if (lower.contains("phú yên") || lower.contains("phu yen") || lower.contains("tuy hòa") || lower.contains("tuy hoa")) detectedDestination = "Phú Yên";
         else if (lower.contains("nha trang")) detectedDestination = "Nha Trang";
         else if (lower.contains("cần thơ") || lower.contains("can tho")) detectedDestination = "Cần Thơ";
         else if (lower.contains("vũng tàu") || lower.contains("vung tau")) detectedDestination = "Vũng Tàu";
@@ -581,5 +590,19 @@ public class ChatbotService {
 
         // 11. General Unrecognized Query (Chitchat or out-of-scope)
         return "Dạ em là trợ lý AI chuyên về **tra cứu lộ trình, giá vé và đặt vé xe khách** của VEXE. Anh/chị đang cần tìm chuyến xe từ đâu đến tỉnh thành nào ạ? Hãy chia sẻ với em để em tra cứu giúp mình nhé!";
+    }
+
+    private int computeRelevance(Trip t, String lower) {
+        int score = 0;
+        if (t.getRoute() != null) {
+            String dep = t.getRoute().getDepartureLocation() != null ? t.getRoute().getDepartureLocation().toLowerCase(Locale.ROOT) : "";
+            String arr = t.getRoute().getArrivalLocation() != null ? t.getRoute().getArrivalLocation().toLowerCase(Locale.ROOT) : "";
+            if (!dep.isEmpty() && lower.contains(dep)) score += 5;
+            if (!arr.isEmpty() && lower.contains(arr)) score += 5;
+            if ((dep.contains("hcm") || dep.contains("sài gòn")) && (lower.contains("sài gòn") || lower.contains("sai gon") || lower.contains("hcm") || lower.contains("tphcm"))) score += 5;
+            if ((arr.contains("phú yên") || arr.contains("tuy hòa")) && (lower.contains("phú yên") || lower.contains("phu yen") || lower.contains("tuy hòa") || lower.contains("tuy hoa"))) score += 5;
+            if ((dep.contains("phú yên") || dep.contains("tuy hòa")) && (lower.contains("phú yên") || lower.contains("phu yen") || lower.contains("tuy hòa") || lower.contains("tuy hoa"))) score += 5;
+        }
+        return score;
     }
 }
