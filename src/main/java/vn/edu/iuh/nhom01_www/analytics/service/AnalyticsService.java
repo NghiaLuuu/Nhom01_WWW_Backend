@@ -14,6 +14,7 @@ import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @Slf4j
 @Service
@@ -25,11 +26,11 @@ public class AnalyticsService {
     @Async("analyticsTaskExecutor")
     public void trackBatch(List<TrackEventDto> events, Authentication authentication, String ipAddress,
                            String userAgent) {
-        String userEmail = authentication != null && authentication.isAuthenticated()
+        String authEmail = authentication != null && authentication.isAuthenticated()
                 ? authentication.getName() : null;
         try {
             List<UserActivityLog> logs = events.stream()
-                    .map(event -> toEntity(event, userEmail, ipAddress, userAgent))
+                    .map(event -> toEntity(event, authEmail, ipAddress, userAgent))
                     .toList();
             activityLogRepository.saveAll(logs);
         } catch (RuntimeException exception) {
@@ -42,8 +43,7 @@ public class AnalyticsService {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("from", from);
         result.put("to", to);
-        result.put("totalEvents", activityLogRepository
-                .countByCreatedAtGreaterThanEqualAndCreatedAtLessThan(range.from(), range.to()));
+        result.put("totalEvents", activityLogRepository.countEvents(range.from(), range.to()));
         result.put("activeVisitors", activityLogRepository.countDistinctVisitors(range.from(), range.to()));
         result.put("daily", activityLogRepository.countDailyOverview(range.from(), range.to()));
         result.put("actions", activityLogRepository.countActions(range.from(), range.to()));
@@ -65,11 +65,35 @@ public class AnalyticsService {
         return activityLogRepository.findSearchTrends(range.from(), range.to(), limit);
     }
 
-    private UserActivityLog toEntity(TrackEventDto event, String userEmail, String ipAddress, String userAgent) {
+    public List<Map<String, Object>> tabFlows(LocalDate from, LocalDate to, int limit) {
+        DateRange range = dateRange(from, to);
+        return activityLogRepository.findTabFlows(range.from(), range.to(), limit);
+    }
+
+    public List<Map<String, Object>> activeUsers(LocalDate from, LocalDate to, int limit) {
+        DateRange range = dateRange(from, to);
+        return activityLogRepository.findActiveUsers(range.from(), range.to(), limit);
+    }
+
+    public List<Map<String, Object>> userJourney(String query, int limit) {
+        return activityLogRepository.findUserJourney(query, limit);
+    }
+
+    private UserActivityLog toEntity(TrackEventDto event, String authEmail, String ipAddress, String userAgent) {
+        String email = authEmail != null ? authEmail : event.userEmail();
+        UUID userId = null;
+        if (event.userId() != null && !event.userId().isBlank()) {
+            try {
+                userId = UUID.fromString(event.userId());
+            } catch (IllegalArgumentException ignored) {
+            }
+        }
+
         return UserActivityLog.builder()
                 .sessionId(event.sessionId())
                 .visitorId(event.visitorId())
-                .userEmail(userEmail)
+                .userId(userId)
+                .userEmail(email)
                 .actionType(event.actionType())
                 .pageUrl(event.pageUrl())
                 .pageTitle(event.pageTitle())
