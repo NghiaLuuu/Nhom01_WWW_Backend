@@ -254,4 +254,44 @@ class ChatbotServiceTest {
         verifyNoInteractions(vectorSearchService);
         verifyNoInteractions(chatModel);
     }
+
+    @Test
+    @DisplayName("Should answer cheapest tickets query with actual trips and booking buttons")
+    void answersCheapestTicketQuery() {
+        ChatbotRequest request = new ChatbotRequest();
+        request.setQuestion("giá vé rẻ nhất ngày mai");
+
+        Route route = Route.builder().id(10L).departureLocation("TP.HCM").arrivalLocation("Cần Thơ").build();
+        Vehicle vehicle = Vehicle.builder().id(1L).type("Giường nằm 34 chỗ").capacity(34).build();
+        Trip trip = Trip.builder().id(201L).route(route).vehicle(vehicle)
+                .departureTime(LocalDateTime.now().plusDays(1).withHour(7).withMinute(0))
+                .price(new BigDecimal("160000")).status("PENDING").build();
+
+        when(tripRepository.findAll()).thenReturn(List.of(trip));
+        when(chatModel.call(any(String.class))).thenThrow(new RuntimeException("Simulated LLM network error"));
+
+        Map<String, Object> result = chatbotService.ask(request, "khach@gmail.com");
+
+        assertThat((String) result.get("answer")).contains("giá vé rẻ", "Chuyến #201", "160.000 VNĐ", "[[BOOK_TRIP_ID:201]]");
+    }
+
+    @Test
+    @DisplayName("Should answer upcoming trips query with trip list and booking buttons")
+    void answersUpcomingTripsQuery() {
+        ChatbotRequest request = new ChatbotRequest();
+        request.setQuestion("mai có những chuyến nào?");
+
+        Route route = Route.builder().id(12L).departureLocation("Hà Nội").arrivalLocation("Hạ Long").build();
+        Vehicle vehicle = Vehicle.builder().id(2L).type("Ghế ngồi 45 chỗ").capacity(45).build();
+        Trip trip = Trip.builder().id(202L).route(route).vehicle(vehicle)
+                .departureTime(LocalDateTime.now().plusDays(1).withHour(6).withMinute(0))
+                .price(new BigDecimal("200000")).status("PENDING").build();
+
+        when(tripRepository.findAll()).thenReturn(List.of(trip));
+        when(chatModel.call(any(String.class))).thenThrow(new RuntimeException("Simulated LLM network error"));
+
+        Map<String, Object> result = chatbotService.ask(request, "khach@gmail.com");
+
+        assertThat((String) result.get("answer")).contains("chuyến xe sắp khởi hành", "Chuyến #202", "[[BOOK_TRIP_ID:202]]");
+    }
 }

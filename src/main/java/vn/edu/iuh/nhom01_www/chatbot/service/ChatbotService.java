@@ -18,6 +18,7 @@ import vn.edu.iuh.nhom01_www.route.repository.RouteRepository;
 import vn.edu.iuh.nhom01_www.trip.model.Trip;
 import vn.edu.iuh.nhom01_www.trip.repository.TripRepository;
 
+import java.math.BigDecimal;
 import java.text.NumberFormat;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -287,38 +288,57 @@ public class ChatbotService {
     }
 
     private String buildRagContext(List<VectorSearchResult> searchResults, String userQuestion) {
-        if (searchResults.isEmpty()) {
-            return "Không tìm thấy dữ liệu vector phù hợp trực tiếp với từ khóa.";
-        }
-
         StringBuilder context = new StringBuilder();
         Set<Long> processedTripIds = new HashSet<>();
         Set<Long> processedRouteIds = new HashSet<>();
 
-        for (VectorSearchResult result : searchResults) {
-            Map<String, Object> meta = result.metadata();
-            String sourceType = meta != null && meta.get("sourceType") != null ? meta.get("sourceType").toString() : "";
+        if (searchResults != null && !searchResults.isEmpty()) {
+            for (VectorSearchResult result : searchResults) {
+                Map<String, Object> meta = result.metadata();
+                String sourceType = meta != null && meta.get("sourceType") != null ? meta.get("sourceType").toString() : "";
 
-            if ("trip".equalsIgnoreCase(sourceType) && meta.get("tripId") != null) {
-                try {
-                    Long tripId = Long.parseLong(meta.get("tripId").toString());
-                    if (processedTripIds.add(tripId)) {
-                        tripRepository.findById(tripId).ifPresent(trip -> {
-                            context.append(formatTripDetails(trip)).append("\n---\n");
-                        });
+                if ("trip".equalsIgnoreCase(sourceType) && meta.get("tripId") != null) {
+                    try {
+                        Long tripId = Long.parseLong(meta.get("tripId").toString());
+                        if (processedTripIds.add(tripId)) {
+                            tripRepository.findById(tripId).ifPresent(trip -> {
+                                context.append(formatTripDetails(trip)).append("\n---\n");
+                            });
+                        }
+                    } catch (Exception ignored) {}
+                } else if ("route".equalsIgnoreCase(sourceType) && meta.get("routeId") != null) {
+                    try {
+                        Long routeId = Long.parseLong(meta.get("routeId").toString());
+                        if (processedRouteIds.add(routeId)) {
+                            routeRepository.findById(routeId).ifPresent(route -> {
+                                context.append(formatRouteDetails(route)).append("\n---\n");
+                            });
+                        }
+                    } catch (Exception ignored) {}
+                } else if (result.content() != null && !result.content().isBlank()) {
+                    context.append(result.content().trim()).append("\n---\n");
+                }
+            }
+        }
+
+        // Live Inventory Context Enrichment:
+        // Always provide real-time database trips to LLM so it can answer questions about cheapest fares, schedules, and routes accurately
+        String lower = userQuestion.toLowerCase(Locale.ROOT);
+        boolean needsEnrichment = processedTripIds.size() < 3 || lower.contains("rẻ") || lower.contains("mai")
+                || lower.contains("chuyến") || lower.contains("vé") || lower.contains("xe") || lower.contains("giá");
+
+        if (needsEnrichment) {
+            List<Trip> allTrips = new ArrayList<>(tripRepository.findAll());
+            if (!allTrips.isEmpty()) {
+                if (lower.contains("rẻ")) {
+                    allTrips.sort(Comparator.comparing((Trip t) -> t.getPrice() != null ? t.getPrice() : BigDecimal.valueOf(9999999)));
+                }
+                context.append("\n[DỮ LIỆU CÁC CHUYẾN XE KHÁCH THỰC TẾ ĐANG BÁN VÉ TRÊN HỆ THỐNG VEXE]:\n");
+                for (Trip t : allTrips.stream().limit(8).collect(Collectors.toList())) {
+                    if (processedTripIds.add(t.getId())) {
+                        context.append(formatTripDetails(t)).append("\n---\n");
                     }
-                } catch (Exception ignored) {}
-            } else if ("route".equalsIgnoreCase(sourceType) && meta.get("routeId") != null) {
-                try {
-                    Long routeId = Long.parseLong(meta.get("routeId").toString());
-                    if (processedRouteIds.add(routeId)) {
-                        routeRepository.findById(routeId).ifPresent(route -> {
-                            context.append(formatRouteDetails(route)).append("\n---\n");
-                        });
-                    }
-                } catch (Exception ignored) {}
-            } else if (result.content() != null && !result.content().isBlank()) {
-                context.append(result.content().trim()).append("\n---\n");
+                }
             }
         }
 
@@ -360,24 +380,19 @@ public class ChatbotService {
 
     private String buildNlgPrompt(String userQuestion, String historyContext, String ragContext, String currentUserEmail) {
         String nowStr = LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm 'ngày' dd/MM/yyyy"));
+        boolean isGuest = currentUserEmail == null || "ANONYMOUS".equalsIgnoreCase(currentUserEmail) || "anonymousUser".equalsIgnoreCase(currentUserEmail);
 
-        return "Bạn là trợ lý ảo AI thông minh, chu đáo và chuyên nghiệp của nền tảng vé xe khách VEXE.\n" +
+        return "Bạn là trợ lý ảo AI thông minh, chu đáo và chuyên nghiệp của nền tảng vé xe khách VEXE 🚌.\n" +
                 "Thời gian hiện tại: " + nowStr + ".\n" +
-                "Người dùng đang chat: " + (currentUserEmail != null ? currentUserEmail : "Khách vãng lai") + ".\n\n" +
+                "Người dùng đang chat: " + (isGuest ? "Khách vãng lai" : currentUserEmail) + ".\n\n" +
                 "HƯỚNG DẪN TRẢ LỜI QUAN TRỌNG:\n" +
-                "1. Luôn chào hỏi và trả lời bằng tiếng Việt lịch sự, tự nhiên, ân cần như nhân viên tư vấn du lịch thực thụ.\n" +
+                "1. Luôn chào hỏi và xưng hô lịch sự là 'em' và gọi khách là 'anh/chị' hoặc 'quý khách' (tuyệt đối không xưng 'tôi', không gọi khách là 'ANONYMOUS').\n" +
                 "2. Sử dụng thông tin từ [DỮ LIỆU CHUYẾN XE TRA CỨU ĐƯỢC] bên dưới để trả lời chính xác, trung thực. Tuyệt đối không bịa đặt chuyến xe hoặc thông tin sai lệch.\n" +
-                "3. Định dạng câu trả lời đẹp mắt bằng Markdown:\n" +
-                "   - In đậm các điểm quan trọng: tuyến đường, giờ khởi hành, giá vé (ví dụ: **250.000 VNĐ**), loại xe.\n" +
-                "   - Dùng danh sách gạch đầu dòng để khách hàng dễ so sánh các chuyến.\n" +
-                "   - Tránh câu trả lời khô khan, cộc lốc hoặc hiển thị định dạng code/JSON.\n" +
-                "4. NẾU khách hàng có ý định muốn ĐẶT VÉ (ví dụ: 'đặt chuyến này', 'mua vé chuyến 8h', 'tôi muốn đi chuyến đầu tiên'):\n" +
-                "   - Xác nhận thông tin chuyến và BẮT BUỘC thêm chính xác thẻ [[BOOK_TRIP_ID:<id>]] vào CUỐI câu trả lời (thay <id> bằng mã ID chuyến xe trong dữ liệu tra cứu) để giao diện hiển thị nút Đặt vé nhanh.\n" +
-                "5. Nếu không tìm thấy chuyến xe phù hợp trong dữ liệu tra cứu:\n" +
-                "   - Báo lịch sự là hiện chưa có chuyến xe khớp chính xác với thời gian/tuyến đường đó.\n" +
-                "   - Gợi ý khách tham khảo các tuyến phổ biến như: Sài Gòn - Đà Lạt, Hà Nội - Sapa, Đà Nẵng - Huế, Sài Gòn - Nha Trang.\n\n" +
+                "3. Khi khách hỏi về giá vé rẻ nhất, chuyến xe ngày mai, hoặc so sánh các chuyến: Phân tích kỹ dữ liệu để trả lời đúng yêu cầu, nêu bật giá vé (ví dụ: **150.000 VNĐ**), giờ khởi hành, tuyến đường, loại xe.\n" +
+                "4. Định dạng câu trả lời đẹp mắt bằng Markdown với danh sách gạch đầu dòng.\n" +
+                "5. Luôn kèm thẻ [[BOOK_TRIP_ID:<id>]] cho các chuyến xe được nhắc đến để giao diện hiển thị nút Đặt vé nhanh cho khách.\n\n" +
                 "[LỊCH SỬ HỘI THOẠI]:\n" + (historyContext.isBlank() ? "Chưa có lịch sử." : historyContext) + "\n\n" +
-                "[DỮ LIỆU CHUYẾN XE TRA CỨU ĐƯỢC TỪ PGVECTOR]:\n" + ragContext + "\n\n" +
+                "[DỮ LIỆU CHUYẾN XE TRA CỨU ĐƯỢC TỪ PGVECTOR & HỆ THỐNG]:\n" + ragContext + "\n\n" +
                 "[CÂU HỎI CỦA KHÁCH HÀNG]:\n" + userQuestion + "\n\n" +
                 "Hãy trả lời khách hàng:";
     }
@@ -507,31 +522,60 @@ public class ChatbotService {
             }
         }
 
-        // 10. Question about trips in general (without specific destination)
-        if (lower.contains("xe") || lower.contains("chuyến") || lower.contains("vé") || lower.contains("đặt") || lower.contains("đi đâu")) {
-            if (lower.contains("nổi bật") || lower.contains("phổ biến") || lower.contains("hot") || lower.contains("gợi ý") || lower.contains("danh sách")) {
-                if (!trips.isEmpty()) {
-                    StringBuilder sb = new StringBuilder();
-                    sb.append("Dạ chào anh/chị! Hệ thống VEXE đang có các chuyến xe nổi bật sau được nhiều khách hàng yêu thích:\n\n");
-                    for (Trip t : trips.stream().limit(3).collect(Collectors.toList())) {
-                        String dep = t.getRoute() != null ? t.getRoute().getDepartureLocation() : "N/A";
-                        String arr = t.getRoute() != null ? t.getRoute().getArrivalLocation() : "N/A";
-                        String vehicleType = t.getVehicle() != null ? t.getVehicle().getType() : "Tiêu chuẩn";
-                        int capacity = t.getVehicle() != null ? t.getVehicle().getCapacity() : 34;
-                        String priceStr = t.getPrice() != null ? CURRENCY_FORMATTER.format(t.getPrice()) + " VNĐ" : "250.000 VNĐ";
-                        String timeStr = t.getDepartureTime() != null ? TIME_FORMATTER.format(t.getDepartureTime()) : "Hôm nay";
+        // 10. Question about cheapest tickets or upcoming trips
+        if (lower.contains("rẻ") || lower.contains("thấp nhất") || lower.contains("tiết kiệm")) {
+            if (!trips.isEmpty()) {
+                List<Trip> sortedByPrice = new ArrayList<>(trips);
+                sortedByPrice.sort(Comparator.comparing((Trip t) -> t.getPrice() != null ? t.getPrice() : BigDecimal.valueOf(9999999)));
 
-                        sb.append("- 🚌 **Chuyến #").append(t.getId()).append("**: ").append(dep).append(" ➔ ").append(arr).append("\n")
-                          .append("  • Khởi hành: **").append(timeStr).append("**\n")
-                          .append("  • Loại xe: ").append(vehicleType).append(" (").append(capacity).append(" chỗ/giường)\n")
-                          .append("  • Giá vé niêm yết: **").append(priceStr).append("**\n")
-                          .append("  • [[BOOK_TRIP_ID:").append(t.getId()).append("]]\n\n");
-                    }
-                    sb.append("Anh/chị có thể bấm vào nút **Đặt vé ngay** ở từng chuyến hoặc cho em biết nơi muốn đến để em tra cứu chính xác nhé!");
-                    return sb.toString();
+                StringBuilder sb = new StringBuilder();
+                sb.append("Dạ chào anh/chị! Dưới đây là các chuyến xe có **giá vé rẻ và ưu đãi nhất** hiện có trên hệ thống VEXE:\n\n");
+                for (Trip t : sortedByPrice.stream().limit(3).collect(Collectors.toList())) {
+                    String dep = t.getRoute() != null ? t.getRoute().getDepartureLocation() : "N/A";
+                    String arr = t.getRoute() != null ? t.getRoute().getArrivalLocation() : "N/A";
+                    String vehicleType = t.getVehicle() != null ? t.getVehicle().getType() : "Tiêu chuẩn";
+                    int capacity = t.getVehicle() != null ? t.getVehicle().getCapacity() : 34;
+                    String priceStr = t.getPrice() != null ? CURRENCY_FORMATTER.format(t.getPrice()) + " VNĐ" : "160.000 VNĐ";
+                    String timeStr = t.getDepartureTime() != null ? TIME_FORMATTER.format(t.getDepartureTime()) : "Hôm nay";
+
+                    sb.append("- 🚌 **Chuyến #").append(t.getId()).append("**: ").append(dep).append(" ➔ ").append(arr).append("\n")
+                      .append("  • Khởi hành: **").append(timeStr).append("**\n")
+                      .append("  • Loại xe: ").append(vehicleType).append(" (").append(capacity).append(" chỗ/giường)\n")
+                      .append("  • Giá vé niêm yết: **").append(priceStr).append("**\n")
+                      .append("  • [[BOOK_TRIP_ID:").append(t.getId()).append("]]\n\n");
                 }
+                sb.append("Anh/chị có thể bấm vào nút **Đặt vé ngay** ở chuyến phù hợp hoặc cho em biết điểm đi và điểm đến cụ thể để em tìm thêm nhé!");
+                return sb.toString();
             }
+        }
 
+        // 11. Question about available trips (mai có những chuyến nào, các chuyến xe)
+        if (lower.contains("mai") || lower.contains("chuyến nào") || lower.contains("có những chuyến") 
+                || lower.contains("nổi bật") || lower.contains("phổ biến") || lower.contains("danh sách chuyến") || lower.contains("gợi ý")) {
+            if (!trips.isEmpty()) {
+                StringBuilder sb = new StringBuilder();
+                sb.append("Dạ chào anh/chị! Dưới đây là các chuyến xe sắp khởi hành đang có sẵn vé để anh/chị tham khảo:\n\n");
+                for (Trip t : trips.stream().limit(3).collect(Collectors.toList())) {
+                    String dep = t.getRoute() != null ? t.getRoute().getDepartureLocation() : "N/A";
+                    String arr = t.getRoute() != null ? t.getRoute().getArrivalLocation() : "N/A";
+                    String vehicleType = t.getVehicle() != null ? t.getVehicle().getType() : "Tiêu chuẩn";
+                    int capacity = t.getVehicle() != null ? t.getVehicle().getCapacity() : 34;
+                    String priceStr = t.getPrice() != null ? CURRENCY_FORMATTER.format(t.getPrice()) + " VNĐ" : "250.000 VNĐ";
+                    String timeStr = t.getDepartureTime() != null ? TIME_FORMATTER.format(t.getDepartureTime()) : "Hôm nay";
+
+                    sb.append("- 🚌 **Chuyến #").append(t.getId()).append("**: ").append(dep).append(" ➔ ").append(arr).append("\n")
+                      .append("  • Khởi hành: **").append(timeStr).append("**\n")
+                      .append("  • Loại xe: ").append(vehicleType).append(" (").append(capacity).append(" chỗ/giường)\n")
+                      .append("  • Giá vé niêm yết: **").append(priceStr).append("**\n")
+                      .append("  • [[BOOK_TRIP_ID:").append(t.getId()).append("]]\n\n");
+                }
+                sb.append("Anh/chị có thể chọn đặt ngay hoặc cho em biết lộ trình mong muốn để em lọc chuyến chuẩn nhất nhé!");
+                return sb.toString();
+            }
+        }
+
+        // 12. Question about trips in general (without specific destination)
+        if (lower.contains("xe") || lower.contains("chuyến") || lower.contains("vé") || lower.contains("đặt") || lower.contains("đi đâu")) {
             return "Dạ anh/chị muốn khởi hành từ đâu và đến tỉnh thành nào ạ? (Ví dụ: *'Tìm xe Sài Gòn đi Đà Lạt tối nay'* hoặc *'Hà Nội đi Sapa sáng mai'*) để em tra cứu chuyến xe và giá vé chính xác nhất cho mình nhé!";
         }
 

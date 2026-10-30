@@ -5,7 +5,9 @@ spring:
 
 spring.ai:
   openai:
-    api-key: ${OPENAI_API_KEY:}
+    chat:
+      options:
+        model: gpt-4o-mini
     embedding:
       model: text-embedding-3-small
       dimensions: 1536
