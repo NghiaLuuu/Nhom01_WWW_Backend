@@ -15,11 +15,37 @@ public class CustomerJourneyTimelineDto {
     private String identifier;
     private String customerName;
     private String customerEmail;
+    private boolean isRegisteredCustomer;
+    private List<String> linkedAnonymousIds;
     private int totalSessions;
     private int totalPageViews;
     private int totalActions;
     private String matchedPersona;
+    
+    // Flat list of all lifetime events
     private List<JourneyEventDto> events;
+    
+    // Segmented journeys (Dynamic Intent-Aware Demarcation)
+    private List<JourneyClusterDto> journeys;
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class JourneyClusterDto {
+        private String journeyId;
+        private String title;
+        private String status; // CONVERTED, ABANDONED, IN_PROGRESS
+        private String targetRoute;
+        private String trafficSource;
+        private String startTime;
+        private String endTime;
+        private int durationMinutes;
+        private int activeSeconds;
+        private int idleSeconds;
+        private boolean customerIdentified;
+        private List<JourneyEventDto> events;
+    }
 
     @Data
     @NoArgsConstructor
@@ -36,4 +62,3 @@ public class CustomerJourneyTimelineDto {
         private String metadata;
     }
 }
-

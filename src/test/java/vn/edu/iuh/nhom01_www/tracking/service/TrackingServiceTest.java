@@ -149,7 +149,6 @@ class TrackingServiceTest {
     @DisplayName("Should record user action")
     void shouldRecordUserAction() {
         when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(sampleSession));
-        when(sessionRepository.save(any())).thenReturn(sampleSession);
         when(actionRepository.save(any(UserAction.class))).thenAnswer(inv -> {
             UserAction act = inv.getArgument(0);
             act.setId(UUID.randomUUID());
@@ -179,6 +178,32 @@ class TrackingServiceTest {
 
         verify(sessionRepository).save(sampleSession);
         assertThat(sampleSession.getCustomerId()).isEqualTo(customerId);
+    }
+
+    @Test
+    @DisplayName("Should stitch guest sessions to registered customer and segment journeys")
+    void shouldStitchSessionsAndSegmentJourneys() {
+        UUID customerId = UUID.randomUUID();
+        vn.edu.iuh.nhom01_www.user.model.Customer cust = vn.edu.iuh.nhom01_www.user.model.Customer.builder()
+                .id(customerId)
+                .email("vip.customer@vexe.vn")
+                .fullName("Khách Hàng VIP")
+                .build();
+
+        when(customerRepository.findByEmail("vip.customer@vexe.vn")).thenReturn(cust);
+        when(sessionRepository.findByCustomerIdOrderByCreatedAtDesc(customerId))
+                .thenReturn(java.util.Collections.singletonList(sampleSession));
+        when(sessionRepository.findDistinctAnonymousIdsByCustomerId(customerId))
+                .thenReturn(java.util.Collections.singletonList("anon-test-123"));
+
+        vn.edu.iuh.nhom01_www.tracking.dto.CustomerJourneyTimelineDto journey = 
+                trackingService.getCustomerJourney("vip.customer@vexe.vn");
+
+        assertThat(journey).isNotNull();
+        assertThat(journey.isRegisteredCustomer()).isTrue();
+        assertThat(journey.getCustomerName()).isEqualTo("Khách Hàng VIP");
+        assertThat(journey.getCustomerEmail()).isEqualTo("vip.customer@vexe.vn");
+        assertThat(journey.getJourneys()).isNotNull();
     }
 }
 

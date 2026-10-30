@@ -61,7 +61,6 @@ public class TrackingServiceImpl implements vn.edu.iuh.nhom01_www.tracking.servi
         LocalDateTime now = LocalDateTime.now();
         if (existing.isPresent()) {
             UserSession session = existing.get();
-            // If last activity is within 30 minutes, reuse session
             LocalDateTime lastActive = session.getEndTime() != null ? session.getEndTime() : session.getStartTime();
             if (lastActive != null && lastActive.isAfter(now.minusMinutes(30))) {
                 session.setEndTime(now);
@@ -72,12 +71,11 @@ public class TrackingServiceImpl implements vn.edu.iuh.nhom01_www.tracking.servi
             }
         }
 
-        // Otherwise create new session
         UserSession newSession = UserSession.builder()
                 .anonymousId(anonId)
                 .customerId(customerId)
-                .ipAddress(ipAddress)
-                .userAgent(userAgent != null ? userAgent : (request != null ? request.getUserAgent() : "Unknown"))
+                .ipAddress(ipAddress != null ? ipAddress : "127.0.0.1")
+                .userAgent(userAgent != null ? (userAgent.length() > 500 ? userAgent.substring(0, 500) : userAgent) : "Unknown")
                 .trafficSource(trafficSource)
                 .utmCampaign(campaign)
                 .startTime(now)
@@ -121,28 +119,28 @@ public class TrackingServiceImpl implements vn.edu.iuh.nhom01_www.tracking.servi
         if (request == null) return;
 
         LocalDateTime now = LocalDateTime.now();
-
         if (request.getSessionId() != null) {
             sessionRepository.findById(request.getSessionId()).ifPresent(session -> {
                 session.setEndTime(now);
-                int addActive = request.getAdditionalActiveSeconds() != null ? Math.max(0, request.getAdditionalActiveSeconds()) : 0;
-                int currentTotal = session.getTotalDurationSeconds() != null ? session.getTotalDurationSeconds() : 0;
-                session.setTotalDurationSeconds(currentTotal + addActive);
+                if (request.getAdditionalActiveSeconds() != null) {
+                    int current = session.getTotalDurationSeconds() != null ? session.getTotalDurationSeconds() : 0;
+                    session.setTotalDurationSeconds(current + request.getAdditionalActiveSeconds());
+                }
                 sessionRepository.save(session);
             });
         }
 
         if (request.getPageViewId() != null) {
             pageViewRepository.findById(request.getPageViewId()).ifPresent(pv -> {
-                int addActive = request.getAdditionalActiveSeconds() != null ? Math.max(0, request.getAdditionalActiveSeconds()) : 0;
-                int addIdle = request.getAdditionalIdleSeconds() != null ? Math.max(0, request.getAdditionalIdleSeconds()) : 0;
-
-                int curActive = pv.getActiveDurationSeconds() != null ? pv.getActiveDurationSeconds() : 0;
-                int curIdle = pv.getIdleDurationSeconds() != null ? pv.getIdleDurationSeconds() : 0;
-
-                pv.setActiveDurationSeconds(curActive + addActive);
-                pv.setIdleDurationSeconds(curIdle + addIdle);
                 pv.setLeftAt(now);
+                if (request.getAdditionalActiveSeconds() != null) {
+                    int active = pv.getActiveDurationSeconds() != null ? pv.getActiveDurationSeconds() : 0;
+                    pv.setActiveDurationSeconds(active + request.getAdditionalActiveSeconds());
+                }
+                if (request.getAdditionalIdleSeconds() != null) {
+                    int idle = pv.getIdleDurationSeconds() != null ? pv.getIdleDurationSeconds() : 0;
+                    pv.setIdleDurationSeconds(idle + request.getAdditionalIdleSeconds());
+                }
                 pageViewRepository.save(pv);
             });
         }
@@ -152,7 +150,7 @@ public class TrackingServiceImpl implements vn.edu.iuh.nhom01_www.tracking.servi
     @Transactional
     public UserAction recordAction(TrackActionRequest request) {
         if (request == null || request.getSessionId() == null) {
-            throw new IllegalArgumentException("Session ID is required");
+            throw new IllegalArgumentException("Session ID is required for recording action");
         }
 
         UserSession session = sessionRepository.findById(request.getSessionId())
@@ -162,10 +160,6 @@ public class TrackingServiceImpl implements vn.edu.iuh.nhom01_www.tracking.servi
         if (request.getPageViewId() != null) {
             pageView = pageViewRepository.findById(request.getPageViewId()).orElse(null);
         }
-
-        LocalDateTime now = LocalDateTime.now();
-        session.setEndTime(now);
-        sessionRepository.save(session);
 
         UserAction action = UserAction.builder()
                 .session(session)
@@ -202,7 +196,19 @@ public class TrackingServiceImpl implements vn.edu.iuh.nhom01_www.tracking.servi
         sessionRepository.findById(sessionId).ifPresent(session -> {
             session.setCustomerId(customerId);
             sessionRepository.save(session);
-            log.info("[Tracking] Merged guest session {} with customer {}", sessionId, customerId);
+
+            // Identity Resolution: Merge all past sessions from this anonymousId to the customer
+            if (session.getAnonymousId() != null && !session.getAnonymousId().isBlank()) {
+                List<UserSession> anonSessions = sessionRepository.findByAnonymousIdOrderByCreatedAtDesc(session.getAnonymousId());
+                for (UserSession s : anonSessions) {
+                    if (s.getCustomerId() == null) {
+                        s.setCustomerId(customerId);
+                        sessionRepository.save(s);
+                    }
+                }
+            }
+            log.info("[Tracking] Merged guest session {} & anonymousId {} with customer {}", 
+                    sessionId, session.getAnonymousId(), customerId);
         });
     }
 
@@ -277,74 +283,125 @@ public class TrackingServiceImpl implements vn.edu.iuh.nhom01_www.tracking.servi
     @Transactional(readOnly = true)
     public CustomerJourneyTimelineDto getCustomerJourney(String identifier) {
         if (identifier == null || identifier.isBlank()) {
-            return CustomerJourneyTimelineDto.builder().identifier("Unknown").events(Collections.emptyList()).build();
+            return CustomerJourneyTimelineDto.builder()
+                    .identifier("Unknown")
+                    .customerName("Không xác định")
+                    .customerEmail("N/A")
+                    .isRegisteredCustomer(false)
+                    .linkedAnonymousIds(Collections.emptyList())
+                    .events(Collections.emptyList())
+                    .journeys(Collections.emptyList())
+                    .build();
         }
 
-        List<UserSession> sessions;
+        Customer identifiedCustomer = null;
         UUID parsedUuid = null;
         try {
-            parsedUuid = UUID.fromString(identifier);
+            parsedUuid = UUID.fromString(identifier.trim());
         } catch (IllegalArgumentException ignored) {}
 
-        if (parsedUuid != null) {
-            // Check if it's a customerId or sessionId
-            final UUID finalParsed = parsedUuid;
-            sessions = sessionRepository.findByCustomerIdOrderByCreatedAtDesc(finalParsed);
-            if (sessions.isEmpty()) {
-                sessionRepository.findById(finalParsed).ifPresent(sessions::add);
+        // 1. Identity Resolution by Email
+        if (identifier.contains("@")) {
+            identifiedCustomer = customerRepository.findByEmail(identifier.trim());
+        } else if (parsedUuid != null) {
+            Optional<Customer> custOpt = customerRepository.findById(parsedUuid);
+            if (custOpt.isPresent()) {
+                identifiedCustomer = custOpt.get();
             }
+        }
+
+        Set<UserSession> resolvedSessions = new LinkedHashSet<>();
+        Set<String> linkedAnonymousIds = new LinkedHashSet<>();
+
+        // 2. Identity Graph Stitching
+        if (identifiedCustomer != null) {
+            UUID custId = identifiedCustomer.getId();
+            List<UserSession> custSessions = sessionRepository.findByCustomerIdOrderByCreatedAtDesc(custId);
+            resolvedSessions.addAll(custSessions);
+
+            List<String> anonIds = sessionRepository.findDistinctAnonymousIdsByCustomerId(custId);
+            linkedAnonymousIds.addAll(anonIds);
+            if (!anonIds.isEmpty()) {
+                List<UserSession> anonSessions = sessionRepository.findByAnonymousIdInOrderByCreatedAtDesc(anonIds);
+                resolvedSessions.addAll(anonSessions);
+            }
+        } else if (parsedUuid != null) {
+            // Might be a session ID
+            sessionRepository.findById(parsedUuid).ifPresent(s -> {
+                resolvedSessions.add(s);
+                if (s.getCustomerId() != null) {
+                    customerRepository.findById(s.getCustomerId()).ifPresent(c -> {
+                        resolvedSessions.addAll(sessionRepository.findByCustomerIdOrderByCreatedAtDesc(c.getId()));
+                    });
+                }
+            });
         } else if (identifier.startsWith("anon-")) {
-            sessions = sessionRepository.findByAnonymousIdOrderByCreatedAtDesc(identifier);
-        } else {
-            sessions = sessionRepository.findByIpAddressOrderByCreatedAtDesc(identifier);
-        }
+            List<UserSession> anonSessions = sessionRepository.findByAnonymousIdOrderByCreatedAtDesc(identifier.trim());
+            resolvedSessions.addAll(anonSessions);
+            linkedAnonymousIds.add(identifier.trim());
 
-        String customerName = "Khách vãng lai";
-        String customerEmail = "N/A";
-        String matchedPersona = "Chưa xác định";
-
-        if (!sessions.isEmpty() && sessions.get(0).getCustomerId() != null) {
-            Optional<Customer> customer = customerRepository.findById(sessions.get(0).getCustomerId());
-            if (customer.isPresent()) {
-                customerName = customer.get().getFullName();
-                customerEmail = customer.get().getEmail();
+            // Check if any session is linked to a registered customer!
+            for (UserSession s : anonSessions) {
+                if (s.getCustomerId() != null) {
+                    Optional<Customer> c = customerRepository.findById(s.getCustomerId());
+                    if (c.isPresent()) {
+                        identifiedCustomer = c.get();
+                        resolvedSessions.addAll(sessionRepository.findByCustomerIdOrderByCreatedAtDesc(identifiedCustomer.getId()));
+                        break;
+                    }
+                }
             }
+        } else {
+            // IP address fallback
+            List<UserSession> ipSessions = sessionRepository.findByIpAddressOrderByCreatedAtDesc(identifier.trim());
+            resolvedSessions.addAll(ipSessions);
         }
 
-        // Get recommendations to check persona
-        List<UserRecommendation> recs;
-        if (!sessions.isEmpty() && sessions.get(0).getCustomerId() != null) {
-            recs = recommendationRepository.findTop5ByCustomerIdOrderByCreatedAtDesc(sessions.get(0).getCustomerId());
-        } else {
+        // Sort all sessions chronologically (oldest to newest)
+        List<UserSession> sortedSessions = resolvedSessions.stream()
+                .sorted(Comparator.comparing(s -> s.getCreatedAt() != null ? s.getCreatedAt() : LocalDateTime.MIN))
+                .collect(Collectors.toList());
+
+        boolean isRegistered = (identifiedCustomer != null);
+        String customerName = isRegistered ? identifiedCustomer.getFullName() : ("Khách vãng lai (" + identifier + ")");
+        String customerEmail = isRegistered ? identifiedCustomer.getEmail() : "Chưa đăng ký";
+
+        // Persona matching
+        String matchedPersona = "Chưa xác định";
+        List<UserRecommendation> recs = Collections.emptyList();
+        if (identifiedCustomer != null) {
+            recs = recommendationRepository.findTop5ByCustomerIdOrderByCreatedAtDesc(identifiedCustomer.getId());
+        } else if (identifier.startsWith("anon-")) {
             recs = recommendationRepository.findTop5ByAnonymousIdOrderByCreatedAtDesc(identifier);
         }
         if (!recs.isEmpty() && recs.get(0).getPersonaCluster() != null) {
             matchedPersona = recs.get(0).getPersonaCluster();
         }
 
-        List<CustomerJourneyTimelineDto.JourneyEventDto> events = new ArrayList<>();
+        // 3. Extract all events across sessions
+        List<CustomerJourneyTimelineDto.JourneyEventDto> allEvents = new ArrayList<>();
         int totalPageViews = 0;
         int totalActions = 0;
 
-        for (UserSession session : sessions) {
-            events.add(CustomerJourneyTimelineDto.JourneyEventDto.builder()
+        for (UserSession session : sortedSessions) {
+            allEvents.add(CustomerJourneyTimelineDto.JourneyEventDto.builder()
                     .id("sess-" + session.getId())
                     .type("SESSION_START")
                     .title("Bắt đầu phiên truy cập")
                     .description("Nguồn: " + session.getTrafficSource() + " | IP: " + session.getIpAddress())
-                    .timestamp(session.getStartTime() != null ? session.getStartTime().format(ISO_FORMATTER) : "")
+                    .timestamp(session.getStartTime() != null ? session.getStartTime().format(ISO_FORMATTER) : (session.getCreatedAt() != null ? session.getCreatedAt().format(ISO_FORMATTER) : ""))
                     .activeSeconds(session.getTotalDurationSeconds())
                     .idleSeconds(0)
-                    .metadata("Campaign: " + (session.getUtmCampaign() != null ? session.getUtmCampaign() : "None"))
+                    .metadata("TrafficSource: " + session.getTrafficSource() + " | Campaign: " + (session.getUtmCampaign() != null ? session.getUtmCampaign() : "None"))
                     .build());
 
             List<PageView> pvs = pageViewRepository.findBySessionIdOrderByEnteredAtAsc(session.getId());
             totalPageViews += pvs.size();
             for (PageView pv : pvs) {
-                events.add(CustomerJourneyTimelineDto.JourneyEventDto.builder()
+                allEvents.add(CustomerJourneyTimelineDto.JourneyEventDto.builder()
                         .id("pv-" + pv.getId())
                         .type("PAGE_VIEW")
-                        .title("Xem trang: " + pv.getPageTitle())
+                        .title("Xem trang: " + (pv.getPageTitle() != null ? pv.getPageTitle() : pv.getPageUrl()))
                         .description("URL: " + pv.getPageUrl() + (pv.getPreviousPageUrl() != null ? " (Từ: " + pv.getPreviousPageUrl() + ")" : ""))
                         .timestamp(pv.getEnteredAt() != null ? pv.getEnteredAt().format(ISO_FORMATTER) : "")
                         .activeSeconds(pv.getActiveDurationSeconds())
@@ -356,27 +413,196 @@ public class TrackingServiceImpl implements vn.edu.iuh.nhom01_www.tracking.servi
             List<UserAction> acts = actionRepository.findBySessionIdOrderByCreatedAtAsc(session.getId());
             totalActions += acts.size();
             for (UserAction act : acts) {
-                events.add(CustomerJourneyTimelineDto.JourneyEventDto.builder()
+                allEvents.add(CustomerJourneyTimelineDto.JourneyEventDto.builder()
                         .id("act-" + act.getId())
                         .type("ACTION")
                         .title("Hành động: " + act.getActionType())
                         .description("Chi tiết: " + (act.getPayload() != null ? act.getPayload() : ""))
                         .timestamp(act.getCreatedAt() != null ? act.getCreatedAt().format(ISO_FORMATTER) : "")
+                        .activeSeconds(0)
+                        .idleSeconds(0)
                         .metadata("ActionType: " + act.getActionType())
                         .build());
             }
         }
 
+        // Sort all events strictly by timestamp ASC
+        allEvents.sort(Comparator.comparing(e -> e.getTimestamp() != null ? e.getTimestamp() : ""));
+
+        // 4. Intent-Aware Dynamic Journey Demarcation
+        List<CustomerJourneyTimelineDto.JourneyClusterDto> journeyClusters = segmentEventsIntoJourneys(allEvents, isRegistered);
+
         return CustomerJourneyTimelineDto.builder()
                 .identifier(identifier)
                 .customerName(customerName)
                 .customerEmail(customerEmail)
-                .totalSessions(sessions.size())
+                .isRegisteredCustomer(isRegistered)
+                .linkedAnonymousIds(new ArrayList<>(linkedAnonymousIds))
+                .totalSessions(sortedSessions.size())
                 .totalPageViews(totalPageViews)
                 .totalActions(totalActions)
                 .matchedPersona(matchedPersona)
+                .events(allEvents)
+                .journeys(journeyClusters)
+                .build();
+    }
+
+    private List<CustomerJourneyTimelineDto.JourneyClusterDto> segmentEventsIntoJourneys(
+            List<CustomerJourneyTimelineDto.JourneyEventDto> events, boolean isRegistered) {
+        if (events == null || events.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<CustomerJourneyTimelineDto.JourneyClusterDto> clusters = new ArrayList<>();
+        List<CustomerJourneyTimelineDto.JourneyEventDto> currentClusterEvents = new ArrayList<>();
+
+        String currentTargetRoute = null;
+        String currentTrafficSource = "direct";
+        boolean previousWasConverted = false;
+        LocalDateTime lastEventTime = null;
+
+        for (CustomerJourneyTimelineDto.JourneyEventDto evt : events) {
+            LocalDateTime evtTime = parseTime(evt.getTimestamp());
+            String detectedRoute = extractRouteFromEvent(evt);
+            boolean isConversionEvent = isConversion(evt);
+
+            boolean shouldSplit = false;
+            if (!currentClusterEvents.isEmpty() && lastEventTime != null && evtTime != null) {
+                long minutesDiff = java.time.Duration.between(lastEventTime, evtTime).abs().toMinutes();
+
+                // Rule 1: Conversion boundary - Previous event finalized booking
+                if (previousWasConverted) {
+                    shouldSplit = true;
+                }
+                // Rule 2: Adaptive Inactivity Window (> 45 minutes)
+                else if (minutesDiff > 45) {
+                    // Route continuity: Same route intent within 120 minutes remains in same journey
+                    if (currentTargetRoute != null && currentTargetRoute.equalsIgnoreCase(detectedRoute) && minutesDiff <= 120) {
+                        shouldSplit = false;
+                    } else {
+                        shouldSplit = true;
+                    }
+                }
+                // Rule 3: Explicit Route Shift after inactivity > 20 mins
+                else if (detectedRoute != null && currentTargetRoute != null 
+                        && !detectedRoute.equalsIgnoreCase(currentTargetRoute) && minutesDiff > 20) {
+                    shouldSplit = true;
+                }
+            }
+
+            if (shouldSplit && !currentClusterEvents.isEmpty()) {
+                clusters.add(buildCluster(clusters.size() + 1, currentClusterEvents, currentTargetRoute, currentTrafficSource, isRegistered));
+                currentClusterEvents = new ArrayList<>();
+                currentTargetRoute = null;
+                previousWasConverted = false;
+            }
+
+            if (currentClusterEvents.isEmpty()) {
+                currentTrafficSource = extractTrafficSource(evt);
+            }
+            if (detectedRoute != null) {
+                currentTargetRoute = detectedRoute;
+            }
+            if (isConversionEvent) {
+                previousWasConverted = true;
+            }
+
+            currentClusterEvents.add(evt);
+            if (evtTime != null) {
+                lastEventTime = evtTime;
+            }
+        }
+
+        if (!currentClusterEvents.isEmpty()) {
+            clusters.add(buildCluster(clusters.size() + 1, currentClusterEvents, currentTargetRoute, currentTrafficSource, isRegistered));
+        }
+
+        return clusters;
+    }
+
+    private CustomerJourneyTimelineDto.JourneyClusterDto buildCluster(
+            int index, List<CustomerJourneyTimelineDto.JourneyEventDto> events,
+            String targetRoute, String trafficSource, boolean isRegistered) {
+
+        String startTime = events.get(0).getTimestamp();
+        String endTime = events.get(events.size() - 1).getTimestamp();
+
+        int totalActive = events.stream().mapToInt(e -> e.getActiveSeconds() != null ? e.getActiveSeconds() : 0).sum();
+        int totalIdle = events.stream().mapToInt(e -> e.getIdleSeconds() != null ? e.getIdleSeconds() : 0).sum();
+
+        LocalDateTime start = parseTime(startTime);
+        LocalDateTime end = parseTime(endTime);
+        int durationMinutes = 1;
+        if (start != null && end != null) {
+            durationMinutes = Math.max(1, (int) java.time.Duration.between(start, end).toMinutes());
+        }
+
+        boolean hasConverted = events.stream().anyMatch(this::isConversion);
+        LocalDateTime now = LocalDateTime.now();
+        boolean isRecent = (end != null && end.isAfter(now.minusMinutes(45)));
+
+        String status;
+        if (hasConverted) {
+            status = "CONVERTED";
+        } else if (isRecent) {
+            status = "IN_PROGRESS";
+        } else {
+            status = "ABANDONED";
+        }
+
+        String routeDisplay = targetRoute != null ? targetRoute : "Toàn bộ hệ thống";
+        String statusText = status.equals("CONVERTED") ? "Chuyển đổi thành công" : (status.equals("ABANDONED") ? "Bỏ rơi giỏ hàng" : "Đang tìm hiểu");
+        String title = "Hành trình #" + index + ": " + (targetRoute != null ? "Tuyến " + targetRoute : "Khám phá dịch vụ") + " (" + statusText + ")";
+
+        return CustomerJourneyTimelineDto.JourneyClusterDto.builder()
+                .journeyId("J-" + index)
+                .title(title)
+                .status(status)
+                .targetRoute(routeDisplay)
+                .trafficSource(trafficSource != null ? trafficSource : "direct")
+                .startTime(startTime)
+                .endTime(endTime)
+                .durationMinutes(durationMinutes)
+                .activeSeconds(totalActive)
+                .idleSeconds(totalIdle)
+                .customerIdentified(isRegistered)
                 .events(events)
                 .build();
+    }
+
+    private String extractRouteFromEvent(CustomerJourneyTimelineDto.JourneyEventDto evt) {
+        String text = (evt.getTitle() + " " + evt.getDescription() + " " + evt.getMetadata()).toLowerCase();
+        if (text.contains("đà lạt") || text.contains("da lat")) return "TP.HCM ⇄ Đà Lạt";
+        if (text.contains("nha trang")) return "TP.HCM ⇄ Nha Trang";
+        if (text.contains("cần thơ") || text.contains("can tho")) return "TP.HCM ⇄ Cần Thơ";
+        if (text.contains("vũng tàu") || text.contains("vung tau")) return "TP.HCM ⇄ Vũng Tàu";
+        if (text.contains("đà nẵng") || text.contains("da nang")) return "Đà Nẵng ⇄ Hội An";
+        if (text.contains("hà nội") || text.contains("hạ long")) return "Hà Nội ⇄ Hạ Long";
+        return null;
+    }
+
+    private boolean isConversion(CustomerJourneyTimelineDto.JourneyEventDto evt) {
+        String text = (evt.getTitle() + " " + evt.getDescription() + " " + evt.getMetadata()).toUpperCase();
+        return text.contains("BOOKING_SUCCESS") || text.contains("PAYMENT_SUCCESS") 
+                || text.contains("PAYMENT_PAID") || text.contains("CHECKOUT_COMPLETE");
+    }
+
+    private String extractTrafficSource(CustomerJourneyTimelineDto.JourneyEventDto evt) {
+        if (evt.getMetadata() != null && evt.getMetadata().contains("TrafficSource: ")) {
+            String sub = evt.getMetadata().substring(evt.getMetadata().indexOf("TrafficSource: ") + 15);
+            int end = sub.indexOf(" |");
+            return end != -1 ? sub.substring(0, end) : sub;
+        }
+        return "direct";
+    }
+
+    private LocalDateTime parseTime(String timeStr) {
+        if (timeStr == null || timeStr.isBlank()) return null;
+        try {
+            return LocalDateTime.parse(timeStr, ISO_FORMATTER);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     @Override
