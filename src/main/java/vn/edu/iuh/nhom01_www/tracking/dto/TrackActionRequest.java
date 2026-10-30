@@ -17,3 +17,4 @@ public class TrackActionRequest {
     private String actionType; // SEARCH, FILTER_PRICE, VIEW_DETAIL, CLICK_BOT, BOOK_CLICK, SELECT_SEAT
     private String payload;
 }
+

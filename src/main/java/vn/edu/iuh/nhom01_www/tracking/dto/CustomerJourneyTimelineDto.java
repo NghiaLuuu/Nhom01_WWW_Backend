@@ -36,3 +36,4 @@ public class CustomerJourneyTimelineDto {
         private String metadata;
     }
 }
+

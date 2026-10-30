@@ -338,6 +338,25 @@ public class RecommendationServiceImpl implements RecommendationService {
         };
     }
 
+    @Override
+    @Transactional
+    public void invalidateAndRefreshUser(String anonymousId, UUID customerId, String ipAddress) {
+        String cacheKey = getCacheKey(anonymousId, customerId, ipAddress);
+        if (redisTemplate != null && redisTemplate.isPresent()) {
+            try {
+                redisTemplate.get().delete(cacheKey);
+            } catch (Exception e) {
+                log.warn("[Recommendation] Redis cache invalidation error: {}", e.getMessage());
+            }
+        }
+        try {
+            getPersonalizedRecommendations(anonymousId, customerId, ipAddress, 5);
+            log.info("[Recommendation] Real-time event refreshed recommendation cache for {}", cacheKey);
+        } catch (Exception e) {
+            log.warn("[Recommendation] Real-time refresh warning: {}", e.getMessage());
+        }
+    }
+
     private String getCacheKey(String anonymousId, UUID customerId, String ipAddress) {
         if (customerId != null) return REDIS_PREFIX + "USER:" + customerId;
         if (anonymousId != null && !anonymousId.isBlank()) return REDIS_PREFIX + "ANON:" + anonymousId;

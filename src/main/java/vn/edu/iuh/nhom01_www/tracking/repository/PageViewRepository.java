@@ -18,3 +18,4 @@ public interface PageViewRepository extends JpaRepository<PageView, UUID> {
            "FROM PageView p GROUP BY p.pageUrl ORDER BY COUNT(p) DESC")
     List<Object[]> getPageDurationStats(Pageable pageable);
 }
+

@@ -18,3 +18,4 @@ public class TrackSessionRequest {
     private String utmCampaign;
     private String userAgent;
 }
+

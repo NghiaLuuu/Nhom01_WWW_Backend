@@ -17,3 +17,4 @@ public class TrackHeartbeatRequest {
     private Integer additionalActiveSeconds;
     private Integer additionalIdleSeconds;
 }
+

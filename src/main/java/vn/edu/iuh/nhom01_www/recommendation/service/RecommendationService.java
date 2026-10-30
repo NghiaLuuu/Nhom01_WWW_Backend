@@ -13,4 +13,6 @@ public interface RecommendationService {
     PersonaType inferUserPersona(String anonymousId, UUID customerId, String ipAddress);
 
     void refreshRecommendationsForActiveUsers();
+
+    void invalidateAndRefreshUser(String anonymousId, UUID customerId, String ipAddress);
 }

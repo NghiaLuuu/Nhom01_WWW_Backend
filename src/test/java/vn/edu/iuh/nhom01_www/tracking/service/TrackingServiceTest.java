@@ -181,3 +181,4 @@ class TrackingServiceTest {
         assertThat(sampleSession.getCustomerId()).isEqualTo(customerId);
     }
 }
+

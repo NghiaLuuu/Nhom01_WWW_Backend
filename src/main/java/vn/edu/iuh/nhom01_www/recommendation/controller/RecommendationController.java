@@ -67,3 +67,4 @@ public class RecommendationController {
         return ResponseEntity.ok(ApiResponse.success("Behavior tracking seed data inserted successfully!"));
     }
 }
+

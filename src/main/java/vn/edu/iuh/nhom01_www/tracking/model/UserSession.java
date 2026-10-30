@@ -64,3 +64,4 @@ public class UserSession {
     @OneToMany(mappedBy = "session", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<UserAction> actions;
 }
+

@@ -22,3 +22,4 @@ public interface UserActionRepository extends JpaRepository<UserAction, UUID> {
     @Query("SELECT a.actionType, COUNT(a) FROM UserAction a GROUP BY a.actionType")
     List<Object[]> countByActionType();
 }
+

@@ -17,3 +17,4 @@ public class TrackPageViewRequest {
     private String pageTitle;
     private String previousPageUrl;
 }
+

@@ -26,3 +26,4 @@ public interface TrackingService {
 
     List<UserSession> getRecentSessions(int limit);
 }
+

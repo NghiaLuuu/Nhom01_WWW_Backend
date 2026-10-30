@@ -27,3 +27,4 @@ public class RecommendedTripDto {
     private String personaCluster;
     private String badgeText; // "Hội đồng điệu lựa chọn" / "Gợi ý AI pgvector"
 }
+

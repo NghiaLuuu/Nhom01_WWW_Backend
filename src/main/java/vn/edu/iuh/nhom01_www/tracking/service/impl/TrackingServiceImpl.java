@@ -16,6 +16,7 @@ import vn.edu.iuh.nhom01_www.tracking.repository.UserRecommendationRepository;
 import vn.edu.iuh.nhom01_www.tracking.repository.UserSessionRepository;
 import vn.edu.iuh.nhom01_www.user.model.Customer;
 import vn.edu.iuh.nhom01_www.user.repository.CustomerRepository;
+import vn.edu.iuh.nhom01_www.recommendation.service.RecommendationService;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -32,6 +33,7 @@ public class TrackingServiceImpl implements vn.edu.iuh.nhom01_www.tracking.servi
     private final UserActionRepository actionRepository;
     private final UserRecommendationRepository recommendationRepository;
     private final CustomerRepository customerRepository;
+    private final Optional<RecommendationService> recommendationService;
 
     private static final DateTimeFormatter ISO_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
@@ -172,7 +174,25 @@ public class TrackingServiceImpl implements vn.edu.iuh.nhom01_www.tracking.servi
                 .payload(request.getPayload())
                 .build();
 
-        return actionRepository.save(action);
+        UserAction savedAction = actionRepository.save(action);
+
+        // Real-time Event-driven Recommendation Refresh
+        String type = savedAction.getActionType();
+        if (type.contains("SEARCH") || type.contains("TRIP") || type.contains("SEAT") || type.contains("CHECKOUT") || type.contains("RECOMMENDATION")) {
+            if (recommendationService != null && recommendationService.isPresent()) {
+                try {
+                    recommendationService.get().invalidateAndRefreshUser(
+                            session.getAnonymousId(),
+                            session.getCustomerId(),
+                            session.getIpAddress()
+                    );
+                } catch (Exception e) {
+                    log.debug("[Tracking] Real-time rec refresh error: {}", e.getMessage());
+                }
+            }
+        }
+
+        return savedAction;
     }
 
     @Override

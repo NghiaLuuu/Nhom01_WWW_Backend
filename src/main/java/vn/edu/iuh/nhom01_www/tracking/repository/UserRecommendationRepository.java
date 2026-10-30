@@ -20,3 +20,4 @@ public interface UserRecommendationRepository extends JpaRepository<UserRecommen
 
     void deleteByCustomerId(UUID customerId);
 }
+

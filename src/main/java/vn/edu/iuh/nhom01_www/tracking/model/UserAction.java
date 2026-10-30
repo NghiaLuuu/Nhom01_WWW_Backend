@@ -43,3 +43,4 @@ public class UserAction {
     @Column(updatable = false)
     private LocalDateTime createdAt;
 }
+

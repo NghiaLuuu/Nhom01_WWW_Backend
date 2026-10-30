@@ -58,3 +58,4 @@ public class PageView {
     @OneToMany(mappedBy = "pageView", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<UserAction> actions;
 }
+

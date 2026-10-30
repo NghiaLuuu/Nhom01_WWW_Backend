@@ -44,3 +44,4 @@ public class UserRecommendation {
     @Column(updatable = false)
     private LocalDateTime createdAt;
 }
+
