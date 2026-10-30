@@ -190,4 +190,26 @@ class ChatbotServiceTest {
         assertThat(actual.documentsWritten()).isEqualTo(15);
         verify(vectorIngestionService).ingestAll();
     }
+
+    @Test
+    @DisplayName("Should activate domain database fallback when ChatModel throws exception")
+    void activatesDomainFallbackWhenChatModelFails() {
+        ChatbotRequest request = new ChatbotRequest();
+        request.setQuestion("Có xe đi Đà Lạt không?");
+
+        Route route = Route.builder().id(10L).departureLocation("TP.HCM").arrivalLocation("Đà Lạt").build();
+        Vehicle vehicle = Vehicle.builder().id(5L).type("Limousine 34 phòng").capacity(34).build();
+        Trip trip = Trip.builder().id(101L).route(route).vehicle(vehicle)
+                .departureTime(LocalDateTime.now().plusDays(1).withHour(8).withMinute(0))
+                .price(new BigDecimal("350000")).status("PENDING").build();
+
+        when(tripRepository.findAll()).thenReturn(List.of(trip));
+        when(chatModel.call(any(String.class))).thenThrow(new RuntimeException("OpenAI 401 Unauthorized"));
+
+        Map<String, Object> response = chatbotService.ask(request, "user@gmail.com");
+
+        assertThat(response).containsKey("answer");
+        String answer = (String) response.get("answer");
+        assertThat(answer).contains("Đà Lạt", "Chuyến #101", "[[BOOK_TRIP_ID:101]]");
+    }
 }
