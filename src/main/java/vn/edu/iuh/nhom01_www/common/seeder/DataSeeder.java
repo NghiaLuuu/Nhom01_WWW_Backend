@@ -82,8 +82,12 @@ public class DataSeeder implements CommandLineRunner {
 
         private void clearDatabase() {
                 log.info("Đang xóa dữ liệu cũ (Sử dụng TRUNCATE CASCADE để tránh lỗi khóa ngoại)...");
-                jdbcTemplate.execute(
-                                "TRUNCATE TABLE refresh_tokens, cancel_requests, payments, tickets, bookings, trips, seats, vehicles, routes, staff_permissions, staffs, customers, role_permissions, roles, permissions, table_metadata RESTART IDENTITY CASCADE");
+                try {
+                    jdbcTemplate.execute(
+                                    "TRUNCATE TABLE refresh_tokens, cancel_requests, payments, tickets, bookings, trips, seats, vehicles, routes, staff_permissions, staffs, customers, role_permissions, roles, permissions, table_metadata, audit_logs RESTART IDENTITY CASCADE");
+                } catch (Exception e) {
+                    log.warn("Lỗi khi TRUNCATE: {}", e.getMessage());
+                }
                 log.info("Xóa dữ liệu cũ thành công!");
         }
 
@@ -138,6 +142,10 @@ public class DataSeeder implements CommandLineRunner {
                 staffRepository.save(Staff.builder().fullName("Nguyễn Quản Lý").email("manager@vexe.vn")
                                 .phoneNumber("0901234568").password(defaultPassword).status("ACTIVE")
                                 .dateOfBirth(LocalDate.of(1988, 5, 15)).staffCode("STAFF002").role(roleAdmin).build());
+
+                staffRepository.save(Staff.builder().fullName("Nhân viên soát vé mobile").email("staff@vexe.vn")
+                                .phoneNumber("0901234569").password(defaultPassword).status("ACTIVE")
+                                .staffCode("STAFF_MOBILE").role(roleStaff).build());
 
                 for (int i = 3; i <= 7; i++) {
                         staffRepository.save(Staff.builder().fullName("Nhân viên " + i).email("staff" + i + "@vexe.vn")
@@ -216,7 +224,7 @@ public class DataSeeder implements CommandLineRunner {
                 // 4. Vehicles
                 log.info("4. Đang tạo Xe...");
                 List<Vehicle> vehicles = new ArrayList<>();
-                String[] types = { "Sleeper", "Limousine", "Seater" };
+                String[] types = { "Giường nằm", "Limousine", "Ghế ngồi" };
                 int[] capacities = { 34, 22, 45 };
                 for (int i = 1; i <= 20; i++) {
                         int typeIdx = i % 3;
@@ -275,7 +283,6 @@ public class DataSeeder implements CommandLineRunner {
                                         .trip(trip)
                                         .status(status)
                                         .totalPrice(total)
-                                        .holdExpiresAt(LocalDateTime.now().plusMinutes(15))
                                         .build());
 
                         if (isPaid) {
@@ -288,8 +295,11 @@ public class DataSeeder implements CommandLineRunner {
                                                 .build());
                         }
 
+                        int ticketIdx = 1;
                         for (Seat seat : bookedSeats) {
+                                String tCode = "VX" + String.format("%04d%02d", i + 1, ticketIdx++);
                                 ticketRepository.save(Ticket.builder()
+                                                .ticketCode(tCode)
                                                 .booking(booking)
                                                 .seat(seat)
                                                 .status(isPaid ? "ISSUED" : "RESERVED")
@@ -297,6 +307,8 @@ public class DataSeeder implements CommandLineRunner {
                                                 .build());
                         }
                 }
+
+                seedMobileVerificationCases(routes.get(0), vehicles.get(0), vehicles.get(1), customers.get(0));
 
                 // 7. Chatbot Metadata
                 log.info("7. Đang tạo Dữ liệu Schema cho Chatbot...");
@@ -341,6 +353,86 @@ public class DataSeeder implements CommandLineRunner {
                                 log.warn("Không thể nạp dữ liệu vector trong seeder: {}", e.getMessage());
                         }
                 });
+        }
+
+        private void seedMobileVerificationCases(Route route, Vehicle todayVehicle, Vehicle wrongDayVehicle,
+                        Customer customer) {
+                LocalDateTime todayDeparture = LocalDate.now().atTime(23, 59);
+                LocalDateTime wrongDayDeparture = LocalDate.now().plusDays(1).atTime(10, 0);
+
+                Trip todayTrip = tripRepository.save(Trip.builder()
+                                .route(route)
+                                .vehicle(todayVehicle)
+                                .departureTime(todayDeparture)
+                                .price(route.getBasePrice())
+                                .status("PENDING")
+                                .build());
+                Trip wrongDayTrip = tripRepository.save(Trip.builder()
+                                .route(route)
+                                .vehicle(wrongDayVehicle)
+                                .departureTime(wrongDayDeparture)
+                                .price(route.getBasePrice())
+                                .status("PENDING")
+                                .build());
+
+                Booking validBooking = createMobileTestBooking(customer, todayTrip, "PAID");
+                Booking usedBooking = createMobileTestBooking(customer, todayTrip, "PAID");
+                Booking unpaidBooking = createMobileTestBooking(customer, todayTrip, "PENDING_PAYMENT");
+                Booking wrongDayBooking = createMobileTestBooking(customer, wrongDayTrip, "PAID");
+
+                createMobileTestPayment(validBooking, "SEED-MOBILE-VALID");
+                createMobileTestPayment(usedBooking, "SEED-MOBILE-USED");
+                createMobileTestPayment(wrongDayBooking, "SEED-MOBILE-WRONG-DAY");
+
+                List<Seat> todaySeats = todayVehicle.getSeats();
+                ticketRepository.save(Ticket.builder()
+                                .ticketCode("QR-VALID-TODAY")
+                                .booking(validBooking)
+                                .seat(todaySeats.get(0))
+                                .status("ISSUED")
+                                .price(todayTrip.getPrice())
+                                .build());
+                ticketRepository.save(Ticket.builder()
+                                .ticketCode("QR-ALREADY-USED")
+                                .booking(usedBooking)
+                                .seat(todaySeats.get(1))
+                                .status("USED")
+                                .usedAt(LocalDateTime.now().minusMinutes(5))
+                                .price(todayTrip.getPrice())
+                                .build());
+                ticketRepository.save(Ticket.builder()
+                                .ticketCode("QR-UNPAID")
+                                .booking(unpaidBooking)
+                                .seat(todaySeats.get(2))
+                                .status("ISSUED")
+                                .price(todayTrip.getPrice())
+                                .build());
+                ticketRepository.save(Ticket.builder()
+                                .ticketCode("QR-WRONG-DAY")
+                                .booking(wrongDayBooking)
+                                .seat(wrongDayVehicle.getSeats().get(0))
+                                .status("ISSUED")
+                                .price(wrongDayTrip.getPrice())
+                                .build());
+        }
+
+        private Booking createMobileTestBooking(Customer customer, Trip trip, String status) {
+                return bookingRepository.save(Booking.builder()
+                                .customer(customer)
+                                .trip(trip)
+                                .status(status)
+                                .totalPrice(trip.getPrice())
+                                .build());
+        }
+
+        private void createMobileTestPayment(Booking booking, String transactionId) {
+                paymentRepository.save(Payment.builder()
+                                .booking(booking)
+                                .amount(booking.getTotalPrice())
+                                .paymentMethod("CASH")
+                                .status("SUCCESS")
+                                .transactionId(transactionId)
+                                .build());
         }
 
         private Vehicle createVehicle(String licensePlate, String type, int capacity) {
