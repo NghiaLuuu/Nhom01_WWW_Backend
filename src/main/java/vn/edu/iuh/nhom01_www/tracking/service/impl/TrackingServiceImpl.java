@@ -623,40 +623,64 @@ public class TrackingServiceImpl implements vn.edu.iuh.nhom01_www.tracking.servi
     @Override
     @Transactional(readOnly = true)
     public LiveVisitorsSummaryResponse getLiveVisitors(int activeWindowMinutes) {
-        int window = activeWindowMinutes > 0 ? activeWindowMinutes : 5;
+        int window = activeWindowMinutes > 0 ? activeWindowMinutes : 30;
         LocalDateTime threshold = LocalDateTime.now().minusMinutes(window);
 
-        List<UserSession> activeSessions = sessionRepository.findActiveSessionsSince(threshold);
-        // Fallback to recent sessions if local dev has low live volume
-        if (activeSessions.isEmpty()) {
-            activeSessions = sessionRepository.findRecentSessions(PageRequest.of(0, 10));
+        List<UserSession> activeSessions = new ArrayList<>(sessionRepository.findActiveSessionsSince(threshold));
+        // Đảm bảo admin luôn có thể xem lịch sử phiên gần đây nếu lượt truy cập realtime thưa thớt
+        if (activeSessions.isEmpty() || activeSessions.size() < 10) {
+            List<UserSession> recent = sessionRepository.findRecentSessions(PageRequest.of(0, 15));
+            Set<UUID> seen = activeSessions.stream().map(UserSession::getId).collect(Collectors.toSet());
+            for (UserSession s : recent) {
+                if (!seen.contains(s.getId())) {
+                    activeSessions.add(s);
+                    seen.add(s.getId());
+                }
+            }
         }
 
         List<LiveVisitorDto> visitorDtos = new ArrayList<>();
-        int registeredCount = 0;
-        int guestCount = 0;
+        int onlineCount = 0;
+        int idleCount = 0;
+        int offlineCount = 0;
+        int registeredOnline = 0;
+        int guestOnline = 0;
 
         for (UserSession s : activeSessions) {
             LiveVisitorDto dto = buildLiveVisitorDto(s);
-            if (dto.isRegisteredCustomer()) {
-                registeredCount++;
+            if ("ONLINE".equals(dto.getOnlineStatus())) {
+                onlineCount++;
+                if (dto.isRegisteredCustomer()) {
+                    registeredOnline++;
+                } else {
+                    guestOnline++;
+                }
+            } else if ("IDLE".equals(dto.getOnlineStatus())) {
+                idleCount++;
             } else {
-                guestCount++;
+                offlineCount++;
             }
             visitorDtos.add(dto);
         }
 
-        // Đưa khách hàng có thao tác mới nhất lên trên cùng (Newest Activity First)
+        // Sắp xếp: ONLINE trước -> IDLE -> OFFLINE; trong cùng nhóm sắp theo lastActivityTime DESC
         visitorDtos.sort((a, b) -> {
+            int rankA = "ONLINE".equals(a.getOnlineStatus()) ? 0 : "IDLE".equals(a.getOnlineStatus()) ? 1 : 2;
+            int rankB = "ONLINE".equals(b.getOnlineStatus()) ? 0 : "IDLE".equals(b.getOnlineStatus()) ? 1 : 2;
+            if (rankA != rankB) {
+                return Integer.compare(rankA, rankB);
+            }
             String timeA = a.getLastActivityTime() != null ? a.getLastActivityTime() : "";
             String timeB = b.getLastActivityTime() != null ? b.getLastActivityTime() : "";
             return timeB.compareTo(timeA);
         });
 
         return LiveVisitorsSummaryResponse.builder()
-                .totalOnline(visitorDtos.size())
-                .registeredOnline(registeredCount)
-                .guestOnline(guestCount)
+                .totalOnline(onlineCount)
+                .totalIdle(idleCount)
+                .totalOffline(offlineCount)
+                .registeredOnline(registeredOnline)
+                .guestOnline(guestOnline)
                 .checkedAt(LocalDateTime.now().format(ISO_FORMATTER))
                 .visitors(visitorDtos)
                 .build();
@@ -799,11 +823,42 @@ public class TrackingServiceImpl implements vn.edu.iuh.nhom01_www.tracking.servi
             }
         }
 
+        LocalDateTime now = LocalDateTime.now();
+        long diffSeconds = latestTime != null ? java.time.Duration.between(latestTime, now).abs().getSeconds() : 999999L;
+
+        String onlineStatus;
+        String statusLabel;
+        boolean isOnline;
+
+        // Tiêu chí nghiệp vụ nhận diện trạng thái:
+        // ONLINE: Trong vòng 120s (2 phút) có thao tác / heartbeat
+        // IDLE: Trong vòng 120s - 300s (2 - 5 phút), hoặc thời gian treo tab lớn hơn thời gian thao tác
+        // OFFLINE: Quá 300s (5 phút) không còn tín hiệu heartbeat, khách đã rời web
+        if (diffSeconds <= 120) {
+            onlineStatus = "ONLINE";
+            statusLabel = "Đang trực tuyến (" + (diffSeconds <= 5 ? "Vừa xong" : diffSeconds + "s trước") + ")";
+            isOnline = true;
+        } else if (diffSeconds <= 300 || (idleSec > 60 && idleSec > activeSec)) {
+            onlineStatus = "IDLE";
+            long mins = Math.max(1, Math.round(diffSeconds / 60.0));
+            statusLabel = "Treo tab (" + mins + " phút trước)";
+            isOnline = false;
+        } else {
+            onlineStatus = "OFFLINE";
+            long mins = Math.max(1, Math.round(diffSeconds / 60.0));
+            statusLabel = mins > 60 ? "Đã rời (" + (mins / 60) + "h trước)" : "Đã rời (" + mins + " phút trước)";
+            isOnline = false;
+        }
+
         return LiveVisitorDto.builder()
                 .sessionId(s.getId().toString())
                 .anonymousId(s.getAnonymousId())
                 .customerId(s.getCustomerId() != null ? s.getCustomerId().toString() : null)
                 .isRegisteredCustomer(isRegistered)
+                .onlineStatus(onlineStatus)
+                .isOnline(isOnline)
+                .offlineSeconds(diffSeconds)
+                .statusLabel(statusLabel)
                 .customerName(name)
                 .customerEmail(email)
                 .ipAddress(s.getIpAddress() != null ? s.getIpAddress() : "127.0.0.1")

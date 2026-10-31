@@ -28,6 +28,12 @@ public class LiveVisitorDto {
     private String trafficSource;
     private String utmCampaign;
     
+    // Session Presence Status (ONLINE < 2m, IDLE 2-5m, OFFLINE > 5m)
+    private String onlineStatus;
+    private boolean isOnline;
+    private Long offlineSeconds;
+    private String statusLabel;
+
     // Current Page & Activity
     private String currentPageUrl;
     private String currentPageTitle;

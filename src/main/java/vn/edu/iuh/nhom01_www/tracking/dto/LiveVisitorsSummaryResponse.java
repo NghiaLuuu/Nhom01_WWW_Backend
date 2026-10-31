@@ -13,6 +13,8 @@ import java.util.List;
 @Builder
 public class LiveVisitorsSummaryResponse {
     private int totalOnline;
+    private int totalIdle;
+    private int totalOffline;
     private int registeredOnline;
     private int guestOnline;
     private String checkedAt;
