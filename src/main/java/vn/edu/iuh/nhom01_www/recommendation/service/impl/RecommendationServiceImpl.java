@@ -371,6 +371,12 @@ public class RecommendationServiceImpl implements RecommendationService {
             String[] rawCities = pairMapping.get(topEntry.getKey());
             String c1 = rawCities[0];
             String c2 = rawCities[1];
+
+            // Resort / holiday travel corridors like Đà Lạt are governed by specialized leisure personas (e.g. DALAT_LIMOUSINE)
+            if (c1.equalsIgnoreCase("Đà Lạt") || c2.equalsIgnoreCase("Đà Lạt")) {
+                return Optional.empty();
+            }
+
             String cityA, cityB;
 
             // Designate City A as Metropolitan Work Hub and City B as Hometown / Province

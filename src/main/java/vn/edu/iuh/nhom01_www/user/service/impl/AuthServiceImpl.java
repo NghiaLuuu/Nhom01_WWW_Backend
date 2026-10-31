@@ -127,7 +127,33 @@ public class AuthServiceImpl implements AuthService {
 
         if (staff == null) {
             if (customerRepository.findByEmail(username) != null) {
-                throw new CustomException("Customer accounts cannot access the staff application.", HttpStatus.FORBIDDEN);
+                Customer customer = customerRepository.findByEmail(username);
+                if (customer != null) {
+                    if (!"ACTIVE".equalsIgnoreCase(customer.getStatus())) {
+                        throw new CustomException("Account is inactive or locked.", HttpStatus.FORBIDDEN);
+                    }
+
+                    Authentication authentication = authenticationManager.authenticate(
+                            new UsernamePasswordAuthenticationToken(customer.getEmail(), request.getPassword())
+                    );
+
+                    UserDetails userDetails = (UserDetails) authentication.getPrincipal();
+                    String jwt = jwtUtils.generateToken(userDetails);
+
+                    Long version = customer.getVersion() != null ? customer.getVersion() : 0L;
+                    RefreshToken refreshToken = refreshTokenService.createRefreshToken(userDetails.getUsername(), version);
+
+                    return JwtResponse.builder()
+                            .accessToken(jwt)
+                            .refreshToken(refreshToken.getToken())
+                            .tokenType("Bearer")
+                            .user(LoginUserResponse.builder()
+                                    .id(customer.getId())
+                                    .username(customer.getEmail())
+                                    .role("customer")
+                                    .build())
+                            .build();
+                }
             }
             throw new BadCredentialsException("Invalid username or password");
         }
