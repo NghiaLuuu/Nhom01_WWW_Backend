@@ -46,11 +46,18 @@ public class RecommendationServiceImpl implements RecommendationService {
     private final Optional<VectorSearchService> vectorSearchService;
     private final Optional<RedisTemplate<String, Object>> redisTemplate;
 
-    private static final String REDIS_PREFIX = "REC:v5:";
+    private static final String REDIS_PREFIX = "REC:v6:";
     private static final long CACHE_TTL_MINUTES = 3;
     private static final Set<String> METRO_HUBS = Set.of("TP.HCM", "Hà Nội", "Đà Nẵng", "Cần Thơ", "Hải Phòng");
 
     public record CommuterHabit(String cityA, String cityB, int bookingCount, String dominantDeparture) {}
+    public record TopDestination(String cityName, int visitCount, int rank) {}
+    public record MultiDestinationHabit(
+            String primaryHomeBase,
+            List<TopDestination> topDestinations,
+            int totalBookings,
+            int distinctDestinationsCount
+    ) {}
 
     @Override
     @Transactional
@@ -87,11 +94,15 @@ public class RecommendationServiceImpl implements RecommendationService {
             }
         }
 
-        // 2. Commuter Habit Analysis & Persona Inference
-        Optional<CommuterHabit> habitOpt = detectCommuterHabit(customerId, anonymousId);
-        PersonaType persona = habitOpt.isPresent()
-                ? PersonaType.COMMUTER_HABIT
-                : inferUserPersona(anonymousId, customerId, ipAddress);
+        // 2. Multi-Destination & Commuter Habit Analysis & Persona Inference
+        Optional<MultiDestinationHabit> multiDestOpt = customerId != null ? detectMultiDestinationHabit(customerId) : Optional.empty();
+        Optional<CommuterHabit> habitOpt = multiDestOpt.isEmpty() ? detectCommuterHabit(customerId, anonymousId) : Optional.empty();
+
+        PersonaType persona = multiDestOpt.isPresent()
+                ? PersonaType.EXPLORER_MULTI_DESTINATION
+                : (habitOpt.isPresent()
+                        ? PersonaType.COMMUTER_HABIT
+                        : inferUserPersona(anonymousId, customerId, ipAddress));
 
         log.info("[Recommendation] Customer={}, AnonId={}, Inferred Persona={}, CurrentCity={}, HabitPresent={}",
                 customerId, anonymousId, persona, currentCity, habitOpt.isPresent());
@@ -263,7 +274,9 @@ public class RecommendationServiceImpl implements RecommendationService {
 
         List<RecommendedTripDto> recommendations;
 
-        if (habitOpt.isPresent()) {
+        if (multiDestOpt.isPresent()) {
+            recommendations = resolveMultiDestinationRecommendations(multiDestOpt.get(), allTrips, currentCity, maxLimit);
+        } else if (habitOpt.isPresent()) {
             CommuterHabit habit = habitOpt.get();
             String cityA = habit.cityA();
             String cityB = habit.cityB();
@@ -491,6 +504,13 @@ public class RecommendationServiceImpl implements RecommendationService {
     @Override
     @Transactional(readOnly = true)
     public PersonaType inferUserPersona(String anonymousId, UUID customerId, String ipAddress) {
+        if (customerId != null) {
+            Optional<MultiDestinationHabit> multi = detectMultiDestinationHabit(customerId);
+            if (multi.isPresent()) {
+                return PersonaType.EXPLORER_MULTI_DESTINATION;
+            }
+        }
+
         Optional<CommuterHabit> habit = detectCommuterHabit(customerId, anonymousId);
         if (habit.isPresent()) {
             return PersonaType.COMMUTER_HABIT;
@@ -623,6 +643,7 @@ public class RecommendationServiceImpl implements RecommendationService {
             return "Xe khách chạy tuyến cố định khứ hồi " + habit.cityA() + " " + habit.cityB() + " giường nằm Limousine đúng giờ êm ái";
         }
         return switch (persona) {
+            case EXPLORER_MULTI_DESTINATION -> "Xe khách giường nằm Limousine chất lượng cao các tuyến du lịch hot Đà Lạt Nha Trang Vũng Tàu Phú Yên";
             case COMMUTER_HABIT -> "Xe khách chạy tuyến cố định khứ hồi Sài Gòn Phú Yên Tuy Hòa giường nằm Limousine";
             case DALAT_LIMOUSINE -> "Xe Limousine phòng nằm cao cấp tuyến Sài Gòn Đà Lạt chạy ban đêm 21h tiện nghi wifi sạc";
             case NHATRANG_FAMILY -> "Xe giường nằm chất lượng cao đi Nha Trang khởi hành ban ngày thoải mái êm ái gia đình";
@@ -634,6 +655,7 @@ public class RecommendationServiceImpl implements RecommendationService {
     private String getBadgeForPersona(PersonaType persona, double score) {
         int percent = (int) Math.round(score * 100);
         return switch (persona) {
+            case EXPLORER_MULTI_DESTINATION -> "🌟 Top điểm đến quen thuộc của bạn";
             case COMMUTER_HABIT -> "🔄 Tuyến quen thuộc thường đi";
             case DALAT_LIMOUSINE -> "🌟 Hội đồng điệu: " + Math.max(82, percent) + "% khách chọn";
             case NHATRANG_FAMILY -> "✨ Phù hợp gia đình & công tác";
@@ -644,6 +666,7 @@ public class RecommendationServiceImpl implements RecommendationService {
 
     private String getReasonForPersona(PersonaType persona, String from, String to) {
         return switch (persona) {
+            case EXPLORER_MULTI_DESTINATION -> "Gợi ý AI: Dựa trên lịch sử khám phá nhiều nơi của bạn, tuyến " + from + " → " + to + " là một trong những điểm đến hàng đầu.";
             case COMMUTER_HABIT -> "Gợi ý AI: Dựa trên thói quen thường xuyên di chuyển tuyến " + from + " → " + to + " của bạn.";
             case DALAT_LIMOUSINE -> "Hội đồng điệu: 88% khách hàng yêu thích xe Limousine Đà Lạt đêm đã đặt vé chuyến " + from + " → " + to + " này.";
             case NHATRANG_FAMILY -> "Hội đồng điệu: 92% hành khách đi cùng gia đình hài lòng với lịch trình êm ái của tuyến " + from + " → " + to + ".";
@@ -758,6 +781,153 @@ public class RecommendationServiceImpl implements RecommendationService {
                 if (result.size() >= maxLimit) break;
                 if (seenIds.add(dto.getTripId())) {
                     result.add(dto);
+                }
+            }
+        }
+
+        return result;
+    }
+
+
+    public Optional<MultiDestinationHabit> detectMultiDestinationHabit(UUID customerId) {
+        if (customerId == null) {
+            return Optional.empty();
+        }
+
+        List<Booking> bookings = bookingRepository.findByCustomer_IdOrderByCreatedAtDesc(customerId);
+        if (bookings == null || bookings.size() < 5) {
+            return Optional.empty();
+        }
+
+        Map<String, Integer> departureCounts = new HashMap<>();
+        Map<String, Integer> destinationVisits = new HashMap<>();
+        Set<String> allCities = new HashSet<>();
+
+        for (Booking b : bookings) {
+            if (b.getTrip() != null && b.getTrip().getRoute() != null) {
+                String from = canonicalCityName(b.getTrip().getRoute().getDepartureLocation());
+                String to = canonicalCityName(b.getTrip().getRoute().getArrivalLocation());
+                if (from == null || to == null) continue;
+
+                departureCounts.put(from, departureCounts.getOrDefault(from, 0) + 1);
+                allCities.add(from);
+                allCities.add(to);
+            }
+        }
+
+        String primaryHomeBase = departureCounts.entrySet().stream()
+                .max(Map.Entry.comparingByValue())
+                .map(Map.Entry::getKey)
+                .orElse("TP.HCM");
+
+        for (Booking b : bookings) {
+            if (b.getTrip() != null && b.getTrip().getRoute() != null) {
+                String from = canonicalCityName(b.getTrip().getRoute().getDepartureLocation());
+                String to = canonicalCityName(b.getTrip().getRoute().getArrivalLocation());
+                if (from == null || to == null) continue;
+
+                if (!to.equalsIgnoreCase(primaryHomeBase)) {
+                    destinationVisits.put(to, destinationVisits.getOrDefault(to, 0) + 1);
+                } else if (!from.equalsIgnoreCase(primaryHomeBase)) {
+                    destinationVisits.put(from, destinationVisits.getOrDefault(from, 0) + 1);
+                }
+            }
+        }
+
+        if (destinationVisits.size() < 3 || allCities.size() < 4) {
+            return Optional.empty();
+        }
+
+        List<Map.Entry<String, Integer>> sorted = destinationVisits.entrySet().stream()
+                .sorted((a, b) -> Integer.compare(b.getValue(), a.getValue()))
+                .toList();
+
+        List<TopDestination> topDests = new ArrayList<>();
+        int rank = 1;
+        for (Map.Entry<String, Integer> entry : sorted) {
+            topDests.add(new TopDestination(entry.getKey(), entry.getValue(), rank++));
+        }
+
+        return Optional.of(new MultiDestinationHabit(
+                primaryHomeBase,
+                topDests,
+                bookings.size(),
+                destinationVisits.size()
+        ));
+    }
+
+    private List<RecommendedTripDto> resolveMultiDestinationRecommendations(
+            MultiDestinationHabit multiHabit,
+            List<Trip> allTrips,
+            String currentCity,
+            int maxLimit) {
+
+        String homeBase = multiHabit.primaryHomeBase();
+        String effectiveDep = (currentCity != null && !currentCity.isBlank()) ? currentCity.trim() : homeBase;
+
+        List<RecommendedTripDto> result = new ArrayList<>();
+        Set<Long> pickedTripIds = new HashSet<>();
+
+        for (TopDestination td : multiHabit.topDestinations()) {
+            if (result.size() >= maxLimit) break;
+
+            String targetDest = td.cityName();
+            boolean isUserAtDest = matchesCity(effectiveDep, targetDest);
+
+            Trip selectedTrip = null;
+            String badgeText;
+            String reasonText;
+            double score = Math.max(0.85, 0.98 - (td.rank() - 1) * 0.02);
+
+            if (isUserAtDest) {
+                selectedTrip = allTrips.stream()
+                        .filter(t -> !pickedTripIds.contains(t.getId()))
+                        .filter(t -> t.getRoute() != null
+                                && matchesCity(t.getRoute().getDepartureLocation(), effectiveDep)
+                                && matchesCity(t.getRoute().getArrivalLocation(), homeBase))
+                        .min(Comparator.comparing(Trip::getDepartureTime))
+                        .orElse(null);
+
+                badgeText = "💼 Về " + homeBase + " (Trung tâm)";
+                reasonText = "Bạn đang ở " + effectiveDep + " - AI gợi ý chuyến xe trở về " + homeBase + " (căn cứ quen thuộc của bạn) xuất bến sớm nhất.";
+            } else {
+                selectedTrip = allTrips.stream()
+                        .filter(t -> !pickedTripIds.contains(t.getId()))
+                        .filter(t -> t.getRoute() != null
+                                && matchesCity(t.getRoute().getDepartureLocation(), effectiveDep)
+                                && matchesCity(t.getRoute().getArrivalLocation(), targetDest))
+                        .min(Comparator.comparing(Trip::getDepartureTime))
+                        .orElse(null);
+
+                if (selectedTrip == null && !matchesCity(effectiveDep, homeBase)) {
+                    selectedTrip = allTrips.stream()
+                            .filter(t -> !pickedTripIds.contains(t.getId()))
+                            .filter(t -> t.getRoute() != null
+                                    && matchesCity(t.getRoute().getDepartureLocation(), homeBase)
+                                    && matchesCity(t.getRoute().getArrivalLocation(), targetDest))
+                            .min(Comparator.comparing(Trip::getDepartureTime))
+                            .orElse(null);
+                }
+
+                String icon = td.rank() == 1 ? "🔥" : (td.rank() == 2 ? "🌟" : (td.rank() == 3 ? "🏖️" : "🏡"));
+                badgeText = icon + " Điểm đến #" + td.rank() + " (" + targetDest + " - " + td.visitCount() + " chuyến)";
+                reasonText = "Dựa trên " + multiHabit.totalBookings() + " vé đã đặt của bạn: " + targetDest
+                        + " là điểm đến bạn ghé thăm nhiều thứ " + td.rank() + " (" + td.visitCount() + " chuyến). AI ưu tiên giờ chạy đẹp nhất cho bạn.";
+            }
+
+            if (selectedTrip != null) {
+                pickedTripIds.add(selectedTrip.getId());
+                result.add(buildRecommendedTripDto(selectedTrip, score, badgeText, reasonText, PersonaType.EXPLORER_MULTI_DESTINATION.name()));
+            }
+        }
+
+        if (result.size() < maxLimit) {
+            for (Trip trip : allTrips) {
+                if (result.size() >= maxLimit) break;
+                if (!pickedTripIds.contains(trip.getId())) {
+                    pickedTripIds.add(trip.getId());
+                    result.add(buildRecommendedTripDto(trip, 0.80, "✨ Tuyến xe phổ biến",
+                            "Gợi ý bổ sung phù hợp với thói quen di chuyển phong phú của bạn.", PersonaType.EXPLORER_MULTI_DESTINATION.name()));
                 }
             }
         }
