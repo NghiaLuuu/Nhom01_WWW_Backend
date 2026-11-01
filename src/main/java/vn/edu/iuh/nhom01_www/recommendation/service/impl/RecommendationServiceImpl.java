@@ -46,7 +46,7 @@ public class RecommendationServiceImpl implements RecommendationService {
     private final Optional<VectorSearchService> vectorSearchService;
     private final Optional<RedisTemplate<String, Object>> redisTemplate;
 
-    private static final String REDIS_PREFIX = "REC:";
+    private static final String REDIS_PREFIX = "REC:v5:";
     private static final long CACHE_TTL_MINUTES = 3;
     private static final Set<String> METRO_HUBS = Set.of("TP.HCM", "Hà Nội", "Đà Nẵng", "Cần Thơ", "Hải Phòng");
 
@@ -197,12 +197,18 @@ public class RecommendationServiceImpl implements RecommendationService {
                     }
                 } else {
                     // Scenario 4: User is at a 3rd City C (e.g. Đà Nẵng, Nha Trang, etc.)
-                    // Check if trip departs from Current City and heads to either Base A or Base B
-                    boolean fromCurrentToBase = matchesCity(routeFrom, currentCity) && (matchesCity(routeTo, cityA) || matchesCity(routeTo, cityB));
-                    if (fromCurrentToBase) {
-                        score = 0.96; // TOP #1 from current location back to user's bases!
-                        badgeText = "Chuyến về căn cứ 📍";
-                        reasonText = "Bạn đang ở " + currentCity + " - Gợi ý chuyến xe trở về " + routeTo + " sớm nhất.";
+                    // Check if trip departs from Current City and heads to Base A (Metropolitan Hub) or Base B (Hometown)
+                    boolean toBaseA = matchesCity(routeFrom, currentCity) && matchesCity(routeTo, cityA);
+                    boolean toBaseB = matchesCity(routeFrom, currentCity) && matchesCity(routeTo, cityB);
+
+                    if (toBaseB) {
+                        score = 0.96;
+                        badgeText = "🏡 Về " + cityB + " (Quê nhà)";
+                        reasonText = "Bạn đang ở " + currentCity + " - AI gợi ý chuyến xe trở về " + cityB + " (quê nhà / điểm đến thường lệ) thuận tiện nhất.";
+                    } else if (toBaseA) {
+                        score = 0.96;
+                        badgeText = "💼 Về " + cityA + " (Trung tâm)";
+                        reasonText = "Bạn đang ở " + currentCity + " - AI gợi ý chuyến xe đến " + cityA + " (trung tâm học tập & làm việc của bạn) xuất bến sớm nhất.";
                     } else if (matchesCity(routeFrom, currentCity)) {
                         score = 0.82;
                         badgeText = "Khởi hành gần bạn 📍";
@@ -255,9 +261,47 @@ public class RecommendationServiceImpl implements RecommendationService {
             }
         }
 
-        // Sort by matchScore DESC
-        scoredCandidates.sort((a, b) -> Double.compare(b.getMatchScore(), a.getMatchScore()));
-        List<RecommendedTripDto> recommendations = scoredCandidates.stream().limit(maxLimit).collect(Collectors.toList());
+        List<RecommendedTripDto> recommendations;
+
+        if (habitOpt.isPresent()) {
+            CommuterHabit habit = habitOpt.get();
+            String cityA = habit.cityA();
+            String cityB = habit.cityB();
+            boolean hasLocation = currentCity != null && !currentCity.isBlank();
+
+            if (!hasLocation) {
+                // Scenario 1: Location OFF -> 50% City A -> City B and 50% City B -> City A
+                List<RecommendedTripDto> listAtoB = scoredCandidates.stream()
+                        .filter(c -> matchesCity(c.getDepartureLocation(), cityA) && matchesCity(c.getArrivalLocation(), cityB))
+                        .sorted(Comparator.comparing(RecommendedTripDto::getDepartureTime))
+                        .toList();
+                List<RecommendedTripDto> listBtoA = scoredCandidates.stream()
+                        .filter(c -> matchesCity(c.getDepartureLocation(), cityB) && matchesCity(c.getArrivalLocation(), cityA))
+                        .sorted(Comparator.comparing(RecommendedTripDto::getDepartureTime))
+                        .toList();
+
+                recommendations = interleaveBalanced(listAtoB, listBtoA, scoredCandidates, maxLimit);
+            } else if (!matchesCity(currentCity, cityA) && !matchesCity(currentCity, cityB)) {
+                // Scenario 4: User is at 3rd City C (e.g. Nha Trang)
+                // 50% City C -> City B (Phú Yên) and 50% City C -> City A (TP.HCM)!
+                List<RecommendedTripDto> toCityB = scoredCandidates.stream()
+                        .filter(c -> matchesCity(c.getDepartureLocation(), currentCity) && matchesCity(c.getArrivalLocation(), cityB))
+                        .sorted(Comparator.comparing(RecommendedTripDto::getDepartureTime))
+                        .toList();
+                List<RecommendedTripDto> toCityA = scoredCandidates.stream()
+                        .filter(c -> matchesCity(c.getDepartureLocation(), currentCity) && matchesCity(c.getArrivalLocation(), cityA))
+                        .sorted(Comparator.comparing(RecommendedTripDto::getDepartureTime))
+                        .toList();
+
+                recommendations = interleaveBalanced(toCityB, toCityA, scoredCandidates, maxLimit);
+            } else {
+                scoredCandidates.sort((a, b) -> Double.compare(b.getMatchScore(), a.getMatchScore()));
+                recommendations = scoredCandidates.stream().limit(maxLimit).collect(Collectors.toList());
+            }
+        } else {
+            scoredCandidates.sort((a, b) -> Double.compare(b.getMatchScore(), a.getMatchScore()));
+            recommendations = scoredCandidates.stream().limit(maxLimit).collect(Collectors.toList());
+        }
 
         // 5. Save to UserRecommendation table
         try {
@@ -679,4 +723,46 @@ public class RecommendationServiceImpl implements RecommendationService {
 
         return l.contains(t) || t.contains(l);
     }
+
+    private List<RecommendedTripDto> interleaveBalanced(
+            List<RecommendedTripDto> list1,
+            List<RecommendedTripDto> list2,
+            List<RecommendedTripDto> allCandidates,
+            int maxLimit) {
+
+        List<RecommendedTripDto> result = new ArrayList<>();
+        Set<Long> seenIds = new HashSet<>();
+
+        int i1 = 0, i2 = 0;
+        while (result.size() < maxLimit && (i1 < list1.size() || i2 < list2.size())) {
+            if (i1 < list1.size()) {
+                RecommendedTripDto trip1 = list1.get(i1++);
+                if (seenIds.add(trip1.getTripId())) {
+                    result.add(trip1);
+                }
+            }
+            if (result.size() < maxLimit && i2 < list2.size()) {
+                RecommendedTripDto trip2 = list2.get(i2++);
+                if (seenIds.add(trip2.getTripId())) {
+                    result.add(trip2);
+                }
+            }
+        }
+
+        if (result.size() < maxLimit) {
+            List<RecommendedTripDto> leftovers = allCandidates.stream()
+                    .filter(c -> !seenIds.contains(c.getTripId()))
+                    .sorted((a, b) -> Double.compare(b.getMatchScore(), a.getMatchScore()))
+                    .toList();
+            for (RecommendedTripDto dto : leftovers) {
+                if (result.size() >= maxLimit) break;
+                if (seenIds.add(dto.getTripId())) {
+                    result.add(dto);
+                }
+            }
+        }
+
+        return result;
+    }
+
 }
