@@ -52,6 +52,29 @@ public class Booking {
     @OneToMany(mappedBy = "booking", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Ticket> tickets;
 
+    @com.fasterxml.jackson.annotation.JsonProperty("seats")
+    public List<String> getSeats() {
+        try {
+            if (tickets == null) return java.util.Collections.emptyList();
+            return tickets.stream()
+                    .map(t -> t.getSeat() != null ? t.getSeat().getSeatName() : null)
+                    .filter(java.util.Objects::nonNull)
+                    .toList();
+        } catch (Exception e) {
+            return java.util.Collections.emptyList();
+        }
+    }
+
+    @com.fasterxml.jackson.annotation.JsonProperty("bookingCode")
+    public String getBookingCode() {
+        try {
+            if (tickets != null && !tickets.isEmpty() && tickets.get(0).getTicketCode() != null) {
+                return tickets.get(0).getTicketCode();
+            }
+        } catch (Exception ignored) {}
+        return "BKG-" + (id != null ? id : "000");
+    }
+
     public void markAsPaid() {
         this.status = "PAID";
     }
