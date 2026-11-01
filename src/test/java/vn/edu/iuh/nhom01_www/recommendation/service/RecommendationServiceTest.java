@@ -268,7 +268,7 @@ class RecommendationServiceTest {
         RecommendedTripDto top1 = results.get(0);
         assertThat(top1.getDepartureLocation()).isEqualTo("Đà Nẵng");
         assertThat(top1.getArrivalLocation()).isEqualTo("Phú Yên");
-        assertThat(top1.getBadgeText()).contains("Chuyến về căn cứ");
+        assertThat(top1.getBadgeText()).contains("Về Phú Yên");
         assertThat(top1.getMatchScore()).isGreaterThanOrEqualTo(0.95);
     }
 }

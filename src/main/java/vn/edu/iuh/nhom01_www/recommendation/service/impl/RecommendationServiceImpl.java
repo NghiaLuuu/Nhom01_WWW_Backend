@@ -657,7 +657,7 @@ public class RecommendationServiceImpl implements RecommendationService {
         return switch (persona) {
             case EXPLORER_MULTI_DESTINATION -> "🌟 Top điểm đến quen thuộc của bạn";
             case COMMUTER_HABIT -> "🔄 Tuyến quen thuộc thường đi";
-            case DALAT_LIMOUSINE -> "🌟 Hội đồng điệu: " + Math.max(82, percent) + "% khách chọn";
+            case DALAT_LIMOUSINE -> "🌟 Tuyến ưa chuộng: " + Math.max(82, percent) + "% khách chọn";
             case NHATRANG_FAMILY -> "✨ Phù hợp gia đình & công tác";
             case BUDGET_SAVER -> "💰 Giá tốt nhất theo thói quen";
             case POPULAR_TRENDING -> "🔥 Tuyến xe thịnh hành tuần này";
@@ -668,8 +668,8 @@ public class RecommendationServiceImpl implements RecommendationService {
         return switch (persona) {
             case EXPLORER_MULTI_DESTINATION -> "Gợi ý AI: Dựa trên lịch sử khám phá nhiều nơi của bạn, tuyến " + from + " → " + to + " là một trong những điểm đến hàng đầu.";
             case COMMUTER_HABIT -> "Gợi ý AI: Dựa trên thói quen thường xuyên di chuyển tuyến " + from + " → " + to + " của bạn.";
-            case DALAT_LIMOUSINE -> "Hội đồng điệu: 88% khách hàng yêu thích xe Limousine Đà Lạt đêm đã đặt vé chuyến " + from + " → " + to + " này.";
-            case NHATRANG_FAMILY -> "Hội đồng điệu: 92% hành khách đi cùng gia đình hài lòng với lịch trình êm ái của tuyến " + from + " → " + to + ".";
+            case DALAT_LIMOUSINE -> "Cùng sở thích: 88% khách hàng chuộng xe Limousine Đà Lạt đêm đã đặt vé chuyến " + from + " → " + to + " này.";
+            case NHATRANG_FAMILY -> "Phù hợp gia đình: 92% hành khách đi cùng người thân hài lòng với lịch trình êm ái của tuyến " + from + " → " + to + ".";
             case BUDGET_SAVER -> "Gợi ý AI: Mức giá tối ưu và tiết kiệm nhất cho tuyến " + from + " → " + to + " dựa trên hành vi tìm kiếm.";
             case POPULAR_TRENDING -> "Xu hướng: Chuyến " + from + " → " + to + " đang có lượng đặt vé cao nhất trong 24 giờ qua.";
         };
@@ -892,7 +892,7 @@ public class RecommendationServiceImpl implements RecommendationService {
                         .orElse(null);
 
                 badgeText = icon + " Điểm đến #" + td.rank() + " (" + targetDest + ") ➜ Về " + homeBase;
-                reasonText = "Bạn đang ở " + targetDest + " (Điểm đến yêu thích #" + td.rank() + " với " + td.visitCount() + " chuyến của bạn) - AI gợi ý chuyến xe trở về " + homeBase + " (căn cứ quen thuộc) xuất bến sớm nhất.";
+                reasonText = "Bạn đang ở " + targetDest + " (Điểm đến yêu thích #" + td.rank() + " với " + td.visitCount() + " chuyến của bạn) - AI gợi ý chuyến xe trở về " + homeBase + " (điểm xuất phát quen thuộc của bạn) xuất bến sớm nhất.";
             } else {
                 selectedTrip = allTrips.stream()
                         .filter(t -> !pickedTripIds.contains(t.getId()))
