@@ -20,9 +20,13 @@ import vn.edu.iuh.nhom01_www.trip.repository.TripRepository;
 
 import java.math.BigDecimal;
 import java.text.NumberFormat;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -294,10 +298,63 @@ public class ChatbotService {
         return greetings.stream().anyMatch(g -> lower.equals(g) || lower.startsWith(g + " ") || lower.endsWith(" " + g));
     }
 
+    private boolean isTripEligible(Trip t, boolean isHistoryQuery, LocalDateTime now) {
+        if (t == null || t.getDepartureTime() == null) return false;
+        if (isHistoryQuery) return true;
+        // Trip must not be in the past (allow 15-minute grace period for trips departing right now)
+        if (t.getDepartureTime().isBefore(now.minusMinutes(15))) {
+            return false;
+        }
+        if (t.getStatus() != null) {
+            String s = t.getStatus().trim().toUpperCase(Locale.ROOT);
+            if ("CANCELLED".equals(s) || "COMPLETED".equals(s)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private LocalDate extractTargetDate(String lower) {
+        LocalDate today = LocalDate.now();
+        if (lower.contains("ngày mai") || lower.contains("sáng mai") || lower.contains("chiều mai")
+                || lower.contains("tối mai") || lower.contains("mai")) {
+            return today.plusDays(1);
+        }
+        if (lower.contains("ngày kia") || lower.contains("mốt")) {
+            return today.plusDays(2);
+        }
+        if (lower.contains("hôm nay") || lower.contains("nay") || lower.contains("tối nay") 
+                || lower.contains("chiều nay") || lower.contains("sáng nay")) {
+            return today;
+        }
+        Matcher dateMatcher = Pattern.compile("(\\b\\d{1,2})[/\\-](\\d{1,2})(?:[/\\-](\\d{4}))?\\b").matcher(lower);
+        if (dateMatcher.find()) {
+            try {
+                int day = Integer.parseInt(dateMatcher.group(1));
+                int month = Integer.parseInt(dateMatcher.group(2));
+                int year = dateMatcher.group(3) != null ? Integer.parseInt(dateMatcher.group(3)) : today.getYear();
+                return LocalDate.of(year, month, day);
+            } catch (Exception ignored) {}
+        }
+        return null;
+    }
+
+    private Integer extractTargetTimeOfDay(String lower) {
+        if (lower.contains("sáng") || lower.contains("sáng sớm")) return 1;
+        if (lower.contains("trưa")) return 2;
+        if (lower.contains("chiều")) return 3;
+        if (lower.contains("tối") || lower.contains("đêm")) return 4;
+        return null;
+    }
+
     private String buildRagContext(List<VectorSearchResult> searchResults, String userQuestion) {
         StringBuilder context = new StringBuilder();
         Set<Long> processedTripIds = new HashSet<>();
         Set<Long> processedRouteIds = new HashSet<>();
+        LocalDateTime now = LocalDateTime.now();
+
+        String lower = userQuestion.toLowerCase(Locale.ROOT);
+        boolean isHistoryQuery = lower.contains("lịch sử") || lower.contains("quá khứ") || lower.contains("đã đi");
 
         if (searchResults != null && !searchResults.isEmpty()) {
             for (VectorSearchResult result : searchResults) {
@@ -309,7 +366,9 @@ public class ChatbotService {
                         Long tripId = Long.parseLong(meta.get("tripId").toString());
                         if (processedTripIds.add(tripId)) {
                             tripRepository.findById(tripId).ifPresent(trip -> {
-                                context.append(formatTripDetails(trip)).append("\n---\n");
+                                if (isTripEligible(trip, isHistoryQuery, now)) {
+                                    context.append(formatTripDetails(trip)).append("\n---\n");
+                                }
                             });
                         }
                     } catch (Exception ignored) {}
@@ -330,26 +389,36 @@ public class ChatbotService {
 
         // Live Inventory Context Enrichment:
         // Always provide real-time database trips to LLM so it can answer questions about cheapest fares, schedules, and routes accurately
-        String lower = userQuestion.toLowerCase(Locale.ROOT);
         boolean needsEnrichment = processedTripIds.size() < 3 || lower.contains("rẻ") || lower.contains("mai")
                 || lower.contains("chuyến") || lower.contains("vé") || lower.contains("xe") || lower.contains("giá");
 
         if (needsEnrichment) {
             List<Trip> allTrips = new ArrayList<>(tripRepository.findAll());
-            if (!allTrips.isEmpty()) {
-                allTrips.sort((t1, t2) -> {
-                    int score1 = computeRelevance(t1, lower);
-                    int score2 = computeRelevance(t2, lower);
+            List<Trip> eligibleTrips = allTrips.stream()
+                    .filter(t -> isTripEligible(t, isHistoryQuery, now))
+                    .collect(Collectors.toList());
+            List<Trip> candidateTrips = eligibleTrips.isEmpty() ? allTrips : eligibleTrips;
+
+            if (!candidateTrips.isEmpty()) {
+                LocalDate targetDate = extractTargetDate(lower);
+                Integer targetTimeOfDay = extractTargetTimeOfDay(lower);
+
+                candidateTrips.sort((t1, t2) -> {
+                    int score1 = computeRelevance(t1, lower, targetDate, targetTimeOfDay, now);
+                    int score2 = computeRelevance(t2, lower, targetDate, targetTimeOfDay, now);
                     if (score1 != score2) return Integer.compare(score2, score1);
                     if (lower.contains("rẻ")) {
                         BigDecimal p1 = t1.getPrice() != null ? t1.getPrice() : BigDecimal.valueOf(9999999);
                         BigDecimal p2 = t2.getPrice() != null ? t2.getPrice() : BigDecimal.valueOf(9999999);
                         return p1.compareTo(p2);
                     }
+                    if (t1.getDepartureTime() != null && t2.getDepartureTime() != null) {
+                        return t1.getDepartureTime().compareTo(t2.getDepartureTime());
+                    }
                     return 0;
                 });
                 context.append("\n[DỮ LIỆU CÁC CHUYẾN XE KHÁCH THỰC TẾ ĐANG BÁN VÉ TRÊN HỆ THỐNG VEXE]:\n");
-                for (Trip t : allTrips.stream().limit(10).collect(Collectors.toList())) {
+                for (Trip t : candidateTrips.stream().limit(10).collect(Collectors.toList())) {
                     if (processedTripIds.add(t.getId())) {
                         context.append(formatTripDetails(t)).append("\n---\n");
                     }
@@ -404,8 +473,11 @@ public class ChatbotService {
                 "1. Luôn chào hỏi và xưng hô lịch sự là 'em' và gọi khách là 'anh/chị' hoặc 'quý khách' (tuyệt đối không xưng 'tôi', không gọi khách là 'ANONYMOUS').\n" +
                 "2. Sử dụng thông tin từ [DỮ LIỆU CHUYẾN XE TRA CỨU ĐƯỢC] bên dưới để trả lời chính xác, trung thực. Tuyệt đối không bịa đặt chuyến xe hoặc thông tin sai lệch.\n" +
                 "3. Khi khách hỏi về giá vé rẻ nhất, chuyến xe ngày mai, hoặc so sánh các chuyến: Phân tích kỹ dữ liệu để trả lời đúng yêu cầu, nêu bật giá vé (ví dụ: **150.000 VNĐ**), giờ khởi hành, tuyến đường, loại xe.\n" +
-                "4. Định dạng câu trả lời đẹp mắt bằng Markdown với danh sách gạch đầu dòng.\n" +
-                "5. Luôn kèm thẻ [[BOOK_TRIP_ID:<id>]] cho các chuyến xe được nhắc đến để giao diện hiển thị nút Đặt vé nhanh cho khách.\n\n" +
+                "4. CHÚ Ý QUAN TRỌNG VỀ THỜI GIAN KHỞI HÀNH:\n" +
+                "   - Tuyệt đối KHÔNG gợi ý hoặc tư vấn chuyến xe đã khởi hành trong quá khứ so với thời gian hiện tại (" + nowStr + ").\n" +
+                "   - Nếu khách tìm chuyến ngày mai hoặc một ngày cụ thể trong tương lai, hãy ưu tiên liệt kê các chuyến xe đúng ngày khách yêu cầu.\n" +
+                "5. Định dạng câu trả lời đẹp mắt bằng Markdown với danh sách gạch đầu dòng.\n" +
+                "6. Luôn kèm thẻ [[BOOK_TRIP_ID:<id>]] cho các chuyến xe được nhắc đến để giao diện hiển thị nút Đặt vé nhanh cho khách.\n\n" +
                 "[LỊCH SỬ HỘI THOẠI]:\n" + (historyContext.isBlank() ? "Chưa có lịch sử." : historyContext) + "\n\n" +
                 "[DỮ LIỆU CHUYẾN XE TRA CỨU ĐƯỢC TỪ PGVECTOR & HỆ THỐNG]:\n" + ragContext + "\n\n" +
                 "[CÂU HỎI CỦA KHÁCH HÀNG]:\n" + userQuestion + "\n\n" +
@@ -502,10 +574,30 @@ public class ChatbotService {
             trips = tripRepository.findAll();
         } catch (Exception ignored) {}
 
+        LocalDateTime now = LocalDateTime.now();
+        List<Trip> eligibleTrips = trips.stream()
+                .filter(t -> isTripEligible(t, false, now))
+                .collect(Collectors.toList());
+        List<Trip> activeTrips = eligibleTrips.isEmpty() ? trips : eligibleTrips;
+
+        LocalDate targetDate = extractTargetDate(lower);
+        Integer targetTimeOfDay = extractTargetTimeOfDay(lower);
+
+        List<Trip> prioritizedTrips = new ArrayList<>(activeTrips);
+        prioritizedTrips.sort((t1, t2) -> {
+            int score1 = computeRelevance(t1, lower, targetDate, targetTimeOfDay, now);
+            int score2 = computeRelevance(t2, lower, targetDate, targetTimeOfDay, now);
+            if (score1 != score2) return Integer.compare(score2, score1);
+            if (t1.getDepartureTime() != null && t2.getDepartureTime() != null) {
+                return t1.getDepartureTime().compareTo(t2.getDepartureTime());
+            }
+            return 0;
+        });
+
         List<Trip> matchingTrips = new ArrayList<>();
         if (detectedDestination != null) {
             final String dest = detectedDestination.toLowerCase(Locale.ROOT);
-            for (Trip t : trips) {
+            for (Trip t : prioritizedTrips) {
                 if (t.getRoute() != null && t.getRoute().getArrivalLocation() != null 
                         && t.getRoute().getArrivalLocation().toLowerCase(Locale.ROOT).contains(dest)) {
                     matchingTrips.add(t);
@@ -540,8 +632,8 @@ public class ChatbotService {
 
         // 10. Question about cheapest tickets or upcoming trips
         if (lower.contains("rẻ") || lower.contains("thấp nhất") || lower.contains("tiết kiệm")) {
-            if (!trips.isEmpty()) {
-                List<Trip> sortedByPrice = new ArrayList<>(trips);
+            if (!prioritizedTrips.isEmpty()) {
+                List<Trip> sortedByPrice = new ArrayList<>(prioritizedTrips);
                 sortedByPrice.sort(Comparator.comparing((Trip t) -> t.getPrice() != null ? t.getPrice() : BigDecimal.valueOf(9999999)));
 
                 StringBuilder sb = new StringBuilder();
@@ -568,10 +660,10 @@ public class ChatbotService {
         // 11. Question about available trips (mai có những chuyến nào, các chuyến xe)
         if (lower.contains("mai") || lower.contains("chuyến nào") || lower.contains("có những chuyến") 
                 || lower.contains("nổi bật") || lower.contains("phổ biến") || lower.contains("danh sách chuyến") || lower.contains("gợi ý")) {
-            if (!trips.isEmpty()) {
+            if (!prioritizedTrips.isEmpty()) {
                 StringBuilder sb = new StringBuilder();
                 sb.append("Dạ chào anh/chị! Dưới đây là các chuyến xe sắp khởi hành đang có sẵn vé để anh/chị tham khảo:\n\n");
-                for (Trip t : trips.stream().limit(3).collect(Collectors.toList())) {
+                for (Trip t : prioritizedTrips.stream().limit(3).collect(Collectors.toList())) {
                     String dep = t.getRoute() != null ? t.getRoute().getDepartureLocation() : "N/A";
                     String arr = t.getRoute() != null ? t.getRoute().getArrivalLocation() : "N/A";
                     String vehicleType = t.getVehicle() != null ? t.getVehicle().getType() : "Tiêu chuẩn";
@@ -592,11 +684,11 @@ public class ChatbotService {
 
         // 12. Question about trips in general (without specific destination)
         if (lower.contains("xe") || lower.contains("chuyến") || lower.contains("vé") || lower.contains("đặt") || lower.contains("đi đâu")) {
-            if (!trips.isEmpty()) {
+            if (!prioritizedTrips.isEmpty()) {
                 StringBuilder sb = new StringBuilder();
                 sb.append("Dạ anh/chị muốn khởi hành từ đâu và đến tỉnh thành nào ạ? (Ví dụ: *'Tìm xe Sài Gòn đi Đà Lạt tối nay'* hoặc *'Hà Nội đi Sapa sáng mai'*).\n\n")
                   .append("Trong lúc chờ anh/chị chọn lộ trình, em gợi ý nhanh một số chuyến xe tiêu biểu đang sẵn vé:\n\n");
-                for (Trip t : trips.stream().limit(3).collect(Collectors.toList())) {
+                for (Trip t : prioritizedTrips.stream().limit(3).collect(Collectors.toList())) {
                     String dep = t.getRoute() != null ? t.getRoute().getDepartureLocation() : "N/A";
                     String arr = t.getRoute() != null ? t.getRoute().getArrivalLocation() : "N/A";
                     String vehicleType = t.getVehicle() != null ? t.getVehicle().getType() : "Tiêu chuẩn";
@@ -617,11 +709,11 @@ public class ChatbotService {
         }
 
         // 13. General Unrecognized Query (Chitchat or out-of-scope)
-        if (!trips.isEmpty()) {
+        if (!prioritizedTrips.isEmpty()) {
             StringBuilder sb = new StringBuilder();
             sb.append("Dạ em là trợ lý AI chuyên về **tra cứu lộ trình, giá vé và hỗ trợ đặt vé xe khách** của VEXE.\n\n")
               .append("Anh/chị đang cần tìm chuyến xe từ đâu đến tỉnh thành nào ạ? Dưới đây là các chuyến xe phổ biến đang có sẵn vé:\n\n");
-            for (Trip t : trips.stream().limit(3).collect(Collectors.toList())) {
+            for (Trip t : prioritizedTrips.stream().limit(3).collect(Collectors.toList())) {
                 String dep = t.getRoute() != null ? t.getRoute().getDepartureLocation() : "N/A";
                 String arr = t.getRoute() != null ? t.getRoute().getArrivalLocation() : "N/A";
                 String vehicleType = t.getVehicle() != null ? t.getVehicle().getType() : "Tiêu chuẩn";
@@ -641,17 +733,116 @@ public class ChatbotService {
         return "Dạ em là trợ lý AI chuyên về **tra cứu lộ trình, giá vé và đặt vé xe khách** của VEXE. Anh/chị đang cần tìm chuyến xe từ đâu đến tỉnh thành nào ạ? Hãy chia sẻ với em để em tra cứu giúp mình nhé!";
     }
 
-    private int computeRelevance(Trip t, String lower) {
+    public int computeRelevance(Trip t, String lower) {
+        return computeRelevance(t, lower, extractTargetDate(lower), extractTargetTimeOfDay(lower), LocalDateTime.now());
+    }
+
+    public int computeRelevance(Trip t, String lower, LocalDate targetDate, Integer targetTimeOfDay, LocalDateTime now) {
         int score = 0;
+        if (t == null) return -9999;
+
+        // 1. Route / Location matching
         if (t.getRoute() != null) {
             String dep = t.getRoute().getDepartureLocation() != null ? t.getRoute().getDepartureLocation().toLowerCase(Locale.ROOT) : "";
             String arr = t.getRoute().getArrivalLocation() != null ? t.getRoute().getArrivalLocation().toLowerCase(Locale.ROOT) : "";
-            if (!dep.isEmpty() && lower.contains(dep)) score += 5;
-            if (!arr.isEmpty() && lower.contains(arr)) score += 5;
-            if ((dep.contains("hcm") || dep.contains("sài gòn")) && (lower.contains("sài gòn") || lower.contains("sai gon") || lower.contains("hcm") || lower.contains("tphcm"))) score += 5;
-            if ((arr.contains("phú yên") || arr.contains("tuy hòa")) && (lower.contains("phú yên") || lower.contains("phu yen") || lower.contains("tuy hòa") || lower.contains("tuy hoa"))) score += 5;
-            if ((dep.contains("phú yên") || dep.contains("tuy hòa")) && (lower.contains("phú yên") || lower.contains("phu yen") || lower.contains("tuy hòa") || lower.contains("tuy hoa"))) score += 5;
+
+            if (!dep.isEmpty() && lower.contains(dep)) score += 30;
+            if (!arr.isEmpty() && lower.contains(arr)) score += 30;
+
+            if ((dep.contains("hcm") || dep.contains("sài gòn") || dep.contains("hồ chí minh")) &&
+                (lower.contains("sài gòn") || lower.contains("sai gon") || lower.contains("hcm") || lower.contains("tphcm") || lower.contains("hồ chí minh"))) {
+                score += 30;
+            }
+            if ((arr.contains("hcm") || arr.contains("sài gòn") || arr.contains("hồ chí minh")) &&
+                (lower.contains("sài gòn") || lower.contains("sai gon") || lower.contains("hcm") || lower.contains("tphcm") || lower.contains("hồ chí minh"))) {
+                score += 30;
+            }
+            if ((arr.contains("phú yên") || arr.contains("tuy hòa")) &&
+                (lower.contains("phú yên") || lower.contains("phu yen") || lower.contains("tuy hòa") || lower.contains("tuy hoa"))) {
+                score += 30;
+            }
+            if ((dep.contains("phú yên") || dep.contains("tuy hòa")) &&
+                (lower.contains("phú yên") || lower.contains("phu yen") || lower.contains("tuy hòa") || lower.contains("tuy hoa"))) {
+                score += 30;
+            }
+            if ((arr.contains("sapa") || arr.contains("sa pa")) &&
+                (lower.contains("sapa") || lower.contains("sa pa"))) {
+                score += 30;
+            }
+            if ((dep.contains("sapa") || dep.contains("sa pa")) &&
+                (lower.contains("sapa") || lower.contains("sa pa"))) {
+                score += 30;
+            }
+            if ((dep.contains("hà nội") || dep.contains("ha noi")) &&
+                (lower.contains("hà nội") || lower.contains("ha noi") || lower.contains("thủ đô"))) {
+                score += 30;
+            }
+            if ((arr.contains("hà nội") || arr.contains("ha noi")) &&
+                (lower.contains("hà nội") || lower.contains("ha noi") || lower.contains("thủ đô"))) {
+                score += 30;
+            }
+            if ((arr.contains("đà lạt") || arr.contains("da lat")) &&
+                (lower.contains("đà lạt") || lower.contains("da lat"))) {
+                score += 30;
+            }
+            if ((arr.contains("nha trang")) && (lower.contains("nha trang"))) {
+                score += 30;
+            }
+            if ((arr.contains("đà nẵng") || arr.contains("da nang")) &&
+                (lower.contains("đà nẵng") || lower.contains("da nang"))) {
+                score += 30;
+            }
+            if ((arr.contains("vũng tàu") || arr.contains("vung tau")) &&
+                (lower.contains("vũng tàu") || lower.contains("vung tau"))) {
+                score += 30;
+            }
+            if ((arr.contains("cần thơ") || arr.contains("can tho")) &&
+                (lower.contains("cần thơ") || lower.contains("can tho"))) {
+                score += 30;
+            }
         }
+
+        // 2. Date Matching (Dominant factor)
+        if (t.getDepartureTime() != null) {
+            LocalDateTime depTime = t.getDepartureTime();
+            LocalDate tripDate = depTime.toLocalDate();
+
+            if (targetDate != null) {
+                if (tripDate.equals(targetDate)) {
+                    score += 100;
+                } else if (tripDate.isBefore(targetDate)) {
+                    score -= 50;
+                } else {
+                    long daysDiff = Math.abs(ChronoUnit.DAYS.between(targetDate, tripDate));
+                    score += Math.max(0, 30 - (int) daysDiff * 10);
+                }
+            } else {
+                if (depTime.isAfter(now)) {
+                    long hoursUntil = ChronoUnit.HOURS.between(now, depTime);
+                    score += Math.max(0, 40 - (int) (hoursUntil / 12));
+                }
+            }
+
+            // 3. Time of Day Matching (sáng, trưa, chiều, tối)
+            if (targetTimeOfDay != null) {
+                int hour = depTime.getHour();
+                if (targetTimeOfDay == 1 && hour >= 4 && hour < 12) {
+                    score += 40;
+                } else if (targetTimeOfDay == 2 && hour >= 11 && hour <= 14) {
+                    score += 40;
+                } else if (targetTimeOfDay == 3 && hour >= 12 && hour < 18) {
+                    score += 40;
+                } else if (targetTimeOfDay == 4 && (hour >= 18 || hour < 4)) {
+                    score += 40;
+                }
+            }
+
+            // 4. Past trips penalty
+            if (depTime.isBefore(now.minusMinutes(15))) {
+                score -= 1000;
+            }
+        }
+
         return score;
     }
 }

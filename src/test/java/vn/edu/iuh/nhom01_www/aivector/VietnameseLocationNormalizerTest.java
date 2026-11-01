@@ -21,6 +21,8 @@ class VietnameseLocationNormalizerTest {
                 .contains(new VietnameseLocationNormalizer.DirectionalLocation("tp hcm", "da lat"));
         assertThat(normalizer.directionalLocations("Tìm chuyến từ TP.HCM đi Nha Trang"))
                 .contains(new VietnameseLocationNormalizer.DirectionalLocation("tp hcm", "nha trang"));
+        assertThat(normalizer.directionalLocations("Tìm chuyến xe từ Hà Nội đi Sapa sáng mai"))
+                .contains(new VietnameseLocationNormalizer.DirectionalLocation("ha noi", "sapa"));
     }
 
     @Test

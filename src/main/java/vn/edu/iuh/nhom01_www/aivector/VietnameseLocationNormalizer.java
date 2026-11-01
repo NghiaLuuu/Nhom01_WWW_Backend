@@ -1,6 +1,7 @@
 package vn.edu.iuh.nhom01_www.aivector;
 
 import java.text.Normalizer;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -36,6 +37,10 @@ final class VietnameseLocationNormalizer {
             Map.entry("sapa", "sapa"),
             Map.entry("sa pa", "sapa"));
 
+    private static final List<Map.Entry<String, String>> SORTED_ALIASES = ALIASES.entrySet().stream()
+            .sorted((e1, e2) -> Integer.compare(e2.getKey().length(), e1.getKey().length()))
+            .toList();
+
     String normalize(String location) {
         if (location == null || location.isBlank()) {
             return "";
@@ -45,7 +50,15 @@ final class VietnameseLocationNormalizer {
                 .replace('đ', 'd').replace('Đ', 'D')
                 .toLowerCase(Locale.ROOT)
                 .replaceAll("[^a-z0-9]+", " ").trim();
-        return ALIASES.getOrDefault(decomposed, decomposed);
+        if (ALIASES.containsKey(decomposed)) {
+            return ALIASES.get(decomposed);
+        }
+        for (Map.Entry<String, String> entry : SORTED_ALIASES) {
+            if (decomposed.startsWith(entry.getKey() + " ")) {
+                return entry.getValue();
+            }
+        }
+        return decomposed;
     }
 
     Optional<DirectionalLocation> directionalLocations(String query) {
