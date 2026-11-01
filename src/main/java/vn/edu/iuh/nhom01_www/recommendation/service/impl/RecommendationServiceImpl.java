@@ -46,7 +46,7 @@ public class RecommendationServiceImpl implements RecommendationService {
     private final Optional<VectorSearchService> vectorSearchService;
     private final Optional<RedisTemplate<String, Object>> redisTemplate;
 
-    private static final String REDIS_PREFIX = "REC:v6:";
+    private static final String REDIS_PREFIX = "REC:v7:";
     private static final long CACHE_TTL_MINUTES = 3;
     private static final Set<String> METRO_HUBS = Set.of("TP.HCM", "Hà Nội", "Đà Nẵng", "Cần Thơ", "Hải Phòng");
 
@@ -879,7 +879,10 @@ public class RecommendationServiceImpl implements RecommendationService {
             String reasonText;
             double score = Math.max(0.85, 0.98 - (td.rank() - 1) * 0.02);
 
+            String icon = td.rank() == 1 ? "🔥" : (td.rank() == 2 ? "🌟" : (td.rank() == 3 ? "🏖️" : "🏡"));
+
             if (isUserAtDest) {
+                // User is physically AT this favorite destination -> Offer return trip back to primary homeBase
                 selectedTrip = allTrips.stream()
                         .filter(t -> !pickedTripIds.contains(t.getId()))
                         .filter(t -> t.getRoute() != null
@@ -888,8 +891,8 @@ public class RecommendationServiceImpl implements RecommendationService {
                         .min(Comparator.comparing(Trip::getDepartureTime))
                         .orElse(null);
 
-                badgeText = "💼 Về " + homeBase + " (Trung tâm)";
-                reasonText = "Bạn đang ở " + effectiveDep + " - AI gợi ý chuyến xe trở về " + homeBase + " (căn cứ quen thuộc của bạn) xuất bến sớm nhất.";
+                badgeText = icon + " Điểm đến #" + td.rank() + " (" + targetDest + ") ➜ Về " + homeBase;
+                reasonText = "Bạn đang ở " + targetDest + " (Điểm đến yêu thích #" + td.rank() + " với " + td.visitCount() + " chuyến của bạn) - AI gợi ý chuyến xe trở về " + homeBase + " (căn cứ quen thuộc) xuất bến sớm nhất.";
             } else {
                 selectedTrip = allTrips.stream()
                         .filter(t -> !pickedTripIds.contains(t.getId()))
@@ -898,6 +901,8 @@ public class RecommendationServiceImpl implements RecommendationService {
                                 && matchesCity(t.getRoute().getArrivalLocation(), targetDest))
                         .min(Comparator.comparing(Trip::getDepartureTime))
                         .orElse(null);
+
+                boolean departsFromEffective = selectedTrip != null;
 
                 if (selectedTrip == null && !matchesCity(effectiveDep, homeBase)) {
                     selectedTrip = allTrips.stream()
@@ -909,10 +914,14 @@ public class RecommendationServiceImpl implements RecommendationService {
                             .orElse(null);
                 }
 
-                String icon = td.rank() == 1 ? "🔥" : (td.rank() == 2 ? "🌟" : (td.rank() == 3 ? "🏖️" : "🏡"));
                 badgeText = icon + " Điểm đến #" + td.rank() + " (" + targetDest + " - " + td.visitCount() + " chuyến)";
-                reasonText = "Dựa trên " + multiHabit.totalBookings() + " vé đã đặt của bạn: " + targetDest
-                        + " là điểm đến bạn ghé thăm nhiều thứ " + td.rank() + " (" + td.visitCount() + " chuyến). AI ưu tiên giờ chạy đẹp nhất cho bạn.";
+                if (departsFromEffective && !matchesCity(effectiveDep, homeBase)) {
+                    reasonText = "Bạn đang ở " + effectiveDep + " - AI gợi ý chuyến xe kết nối trực tiếp đến " + targetDest
+                            + " (Điểm đến yêu thích #" + td.rank() + " của bạn với " + td.visitCount() + " chuyến).";
+                } else {
+                    reasonText = "Dựa trên " + multiHabit.totalBookings() + " vé đã đặt của bạn: " + targetDest
+                            + " là điểm đến bạn ghé thăm nhiều thứ " + td.rank() + " (" + td.visitCount() + " chuyến). AI ưu tiên giờ chạy đẹp nhất cho bạn.";
+                }
             }
 
             if (selectedTrip != null) {
