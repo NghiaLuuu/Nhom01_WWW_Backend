@@ -56,7 +56,7 @@ public class TripBookingAvailabilityService {
     private boolean isBookingOpen(Trip trip, int closeMinutesBefore) {
         if (trip == null || trip.getDepartureTime() == null || isUnavailableStatus(trip)) return false;
         if (!LocalDateTime.now().isBefore(trip.getDepartureTime().minusMinutes(closeMinutesBefore))) return false;
-        return getAvailableSeatCount(trip) > 0;
+        return (trip.getAvailableSeats() != null ? trip.getAvailableSeats() : getAvailableSeatCount(trip)) > 0;
     }
 
     private void ensureBookingOpen(Trip trip, int closeMinutesBefore, String channel) {
