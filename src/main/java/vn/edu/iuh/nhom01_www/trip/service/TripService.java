@@ -6,6 +6,9 @@ import vn.edu.iuh.nhom01_www.trip.dto.TripRequest;
 
 public interface TripService {
     List<Trip> getAllTrips();
+    default List<Trip> getAllTrips(Integer limit) {
+        return getAllTrips();
+    }
     List<Trip> searchTrips(String departureLocation, String arrivalLocation, String date);
     Trip getTripById(Long id);
     Trip createTrip(TripRequest req);

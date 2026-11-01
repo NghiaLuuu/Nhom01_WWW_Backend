@@ -20,6 +20,7 @@ import vn.edu.iuh.nhom01_www.trip.repository.TripRepository;
 
 import java.math.BigDecimal;
 import java.text.NumberFormat;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -113,7 +114,6 @@ public class ChatbotService {
         List<VectorSearchResult> searchResults = Collections.emptyList();
         if (vectorSearchService.isPresent()) {
             try {
-                // High-precision vector query filtered by partition (reduces search space by 70%, 3-4x faster)
                 VectorSearchRequest searchRequest = new VectorSearchRequest(userQuestion, 6, 0.30d, partition, null);
                 searchResults = vectorSearchService.get().search(searchRequest);
                 log.info("RAG Partition [{}]: Vector search returned {} results for query: '{}'", 
@@ -126,7 +126,7 @@ public class ChatbotService {
             }
         }
 
-        // Stage 3: Context Enrichment from Domain Data
+        // Stage 3: Context Enrichment from Domain Data (Strict future-only filter)
         String ragContext = buildRagContext(searchResults, userQuestion);
 
         // Stage 4: Natural Language Generation (ChatModel with Spring AI prompt engineering)
@@ -164,30 +164,22 @@ public class ChatbotService {
         }
     }
 
-    /**
-     * Intent Classifier & Partition Router:
-     * Dispatches query to TRIP, ROUTE, or VEHICLE partition, reducing vector search space by 70%
-     * and boosting retrieval speed by 3-4x while eliminating semantic noise.
-     */
     public String routePartition(String question) {
         if (question == null) return null;
         String lower = question.toLowerCase(Locale.ROOT);
 
-        // Partition 1: VEHICLE (Loại xe, tiện ích xe, Limousine, giường nằm, massage, wifi)
         if (lower.contains("loại xe") || lower.contains("limousine") || lower.contains("giường nằm")
                 || lower.contains("tiện ích") || lower.contains("wifi") || lower.contains("massage")
                 || lower.contains("sạc") || lower.contains("màn hình")) {
             return "VEHICLE";
         }
 
-        // Partition 2: ROUTE (Tuyến đường, cự ly, thời gian đi, lộ trình, điểm đón trả, bến xe)
         if (lower.contains("tuyến") || lower.contains("đường") || lower.contains("lộ trình") 
                 || lower.contains("bến xe") || lower.contains("trạm") || lower.contains("km") 
                 || lower.contains("khoảng cách") || lower.contains("mất mấy tiếng") || lower.contains("bao xa")) {
             return "ROUTE";
         }
 
-        // Partition 3: TRIP (Chuyến xe, giờ chạy, ngày đi, giá vé, số ghế, đặt chuyến)
         if (lower.contains("chuyến") || lower.contains("giờ") || lower.contains("sáng") || lower.contains("tối")
                 || lower.contains("trưa") || lower.contains("chiều") || lower.contains("ngày mai") 
                 || lower.contains("hôm nay") || lower.contains("cuối tuần") || lower.contains("giá vé") 
@@ -196,51 +188,40 @@ public class ChatbotService {
             return "TRIP";
         }
 
-        return null; // General query (no partition constraint)
+        return null;
     }
 
-    /**
-     * Security Firewall / Whitelist Validator:
-     * Intercepts prohibited questions (passwords, staff codes, internal revenue, customer PII, prompt injections)
-     * without calling LLM or vector search.
-     */
     public String checkSecurityFirewall(String question) {
         if (question == null) return null;
         String lower = question.toLowerCase(Locale.ROOT);
 
-        // Scope 1: Credentials & Secrets
         if (lower.contains("mật khẩu") || lower.contains("password") || lower.contains("token") 
                 || lower.contains("secret") || lower.contains("api_key") || lower.contains("apikey")) {
             return "🛡️ [BẢO MẬT HỆ THỐNG]: Vì lý do an toàn, trợ lý VEXE không được phép truy xuất hoặc tiết lộ thông tin mật khẩu và khóa bảo mật của bất kỳ tài khoản nào.";
         }
 
-        // Scope 2: Staff & Internal Management
         if (lower.contains("mã nhân viên") || lower.contains("lương nhân viên") || lower.contains("bảng lương")
                 || lower.contains("staff code") || lower.contains("cmnd nhân viên") || lower.contains("cccd nhân viên")) {
             return "🛡️ [BẢO MẬT NỘI BỘ]: Dữ liệu nhân sự và quản trị nội bộ của công ty được bảo mật theo quy định, không thể cung cấp ra ngoài.";
         }
 
-        // Scope 3: Internal Financials & Secrets
         if (lower.contains("doanh thu nội bộ") || lower.contains("lợi nhuận ròng") || lower.contains("báo cáo tài chính nội bộ")
                 || lower.contains("chi phí vận hành nội bộ")) {
             return "🛡️ [BẢO MẬT TÀI CHÍNH]: Số liệu tài chính nội bộ được bảo vệ bởi chính sách bảo mật doanh nghiệp.";
         }
 
-        // Scope 4: Passenger Privacy / PII of other customers
         if (lower.contains("thông tin cá nhân của người khác") || lower.contains("danh sách hành khách")
                 || lower.contains("số điện thoại khách khác") || lower.contains("ai đang ngồi ghế")
                 || lower.contains("vé của người khác")) {
             return "🛡️ [BẢO MẬT KHÁCH HÀNG]: VEXE cam kết bảo mật 100% dữ liệu hành khách. Bạn chỉ có thể tra cứu thông tin vé của chính mình bằng mã đặt vé.";
         }
 
-        // Scope 5: Prompt Injection / System Prompt Exfiltration
         if (lower.contains("ignore all previous instructions") || lower.contains("system prompt")
                 || lower.contains("developer mode") || lower.contains("jailbreak")
                 || lower.contains("bỏ qua các chỉ dẫn trước") || lower.contains("quên các câu lệnh trước")) {
             return "🛡️ [AN TOÀN AI]: Yêu cầu vi phạm chính sách an toàn của hệ thống. Tôi chỉ có thể hỗ trợ các thông tin du lịch và đặt vé xe.";
         }
 
-        // Scope 6: SQL / Command Injection
         if (lower.contains("drop table") || lower.contains("delete from") || lower.contains("select * from users")
                 || lower.contains("truncate table") || lower.contains("exec ") || lower.contains("xp_cmdshell")) {
             return "🛡️ [CẢNH BÁO BẢO MẬT]: Phát hiện truy vấn độc hại. Yêu cầu đã bị từ chối và ghi lại nhật ký an ninh.";
@@ -298,6 +279,7 @@ public class ChatbotService {
         StringBuilder context = new StringBuilder();
         Set<Long> processedTripIds = new HashSet<>();
         Set<Long> processedRouteIds = new HashSet<>();
+        LocalDateTime now = LocalDateTime.now();
 
         if (searchResults != null && !searchResults.isEmpty()) {
             for (VectorSearchResult result : searchResults) {
@@ -309,7 +291,11 @@ public class ChatbotService {
                         Long tripId = Long.parseLong(meta.get("tripId").toString());
                         if (processedTripIds.add(tripId)) {
                             tripRepository.findById(tripId).ifPresent(trip -> {
-                                context.append(formatTripDetails(trip)).append("\n---\n");
+                                // STRICT GUARD: Filter out past or cancelled trips from vector store!
+                                if (trip.getDepartureTime() != null && trip.getDepartureTime().isAfter(now)
+                                        && !"CANCELLED".equalsIgnoreCase(trip.getStatus())) {
+                                    context.append(formatTripDetails(trip)).append("\n---\n");
+                                }
                             });
                         }
                     } catch (Exception ignored) {}
@@ -329,15 +315,21 @@ public class ChatbotService {
         }
 
         // Live Inventory Context Enrichment:
-        // Always provide real-time database trips to LLM so it can answer questions about cheapest fares, schedules, and routes accurately
+        // Always provide relevant, real-time future trips matching the user's destination, route, and target date
         String lower = userQuestion.toLowerCase(Locale.ROOT);
         boolean needsEnrichment = processedTripIds.size() < 3 || lower.contains("rẻ") || lower.contains("mai")
-                || lower.contains("chuyến") || lower.contains("vé") || lower.contains("xe") || lower.contains("giá");
+                || lower.contains("chuyến") || lower.contains("vé") || lower.contains("xe") || lower.contains("giá")
+                || lower.contains("sapa") || lower.contains("đà lạt") || lower.contains("hà nội");
 
         if (needsEnrichment) {
-            List<Trip> allTrips = new ArrayList<>(tripRepository.findAll());
-            if (!allTrips.isEmpty()) {
-                allTrips.sort((t1, t2) -> {
+            List<Trip> allTrips = tripRepository.findAll();
+            List<Trip> futureTrips = allTrips.stream()
+                    .filter(t -> t.getDepartureTime() != null && t.getDepartureTime().isAfter(now))
+                    .filter(t -> !"CANCELLED".equalsIgnoreCase(t.getStatus()))
+                    .collect(Collectors.toList());
+
+            if (!futureTrips.isEmpty()) {
+                futureTrips.sort((t1, t2) -> {
                     int score1 = computeRelevance(t1, lower);
                     int score2 = computeRelevance(t2, lower);
                     if (score1 != score2) return Integer.compare(score2, score1);
@@ -346,10 +338,11 @@ public class ChatbotService {
                         BigDecimal p2 = t2.getPrice() != null ? t2.getPrice() : BigDecimal.valueOf(9999999);
                         return p1.compareTo(p2);
                     }
-                    return 0;
+                    return t1.getDepartureTime().compareTo(t2.getDepartureTime());
                 });
-                context.append("\n[DỮ LIỆU CÁC CHUYẾN XE KHÁCH THỰC TẾ ĐANG BÁN VÉ TRÊN HỆ THỐNG VEXE]:\n");
-                for (Trip t : allTrips.stream().limit(10).collect(Collectors.toList())) {
+
+                context.append("\n[DỮ LIỆU CÁC CHUYẾN XE KHÁCH THỰC TẾ ĐANG BÁN VÉ TRÊN HỆ THỐNG VEXE (TẤT CẢ ĐỀU TRONG TƯƠNG LAI)]:\n");
+                for (Trip t : futureTrips.stream().limit(15).collect(Collectors.toList())) {
                     if (processedTripIds.add(t.getId())) {
                         context.append(formatTripDetails(t)).append("\n---\n");
                     }
@@ -394,32 +387,34 @@ public class ChatbotService {
     }
 
     private String buildNlgPrompt(String userQuestion, String historyContext, String ragContext, String currentUserEmail) {
-        String nowStr = LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm 'ngày' dd/MM/yyyy"));
+        LocalDateTime now = LocalDateTime.now();
+        String nowStr = now.format(DateTimeFormatter.ofPattern("HH:mm 'ngày' dd/MM/yyyy"));
+        String todayStr = now.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+        String tomorrowStr = now.plusDays(1).format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
         boolean isGuest = currentUserEmail == null || "ANONYMOUS".equalsIgnoreCase(currentUserEmail) || "anonymousUser".equalsIgnoreCase(currentUserEmail);
 
         return "Bạn là trợ lý ảo AI thông minh, chu đáo và chuyên nghiệp của nền tảng vé xe khách VEXE 🚌.\n" +
-                "Thời gian hiện tại: " + nowStr + ".\n" +
+                "Thời gian hiện tại của hệ thống: " + nowStr + " (Hôm nay: " + todayStr + ", Ngày mai: " + tomorrowStr + ").\n" +
                 "Người dùng đang chat: " + (isGuest ? "Khách vãng lai" : currentUserEmail) + ".\n\n" +
-                "HƯỚNG DẪN TRẢ LỜI QUAN TRỌNG:\n" +
-                "1. Luôn chào hỏi và xưng hô lịch sự là 'em' và gọi khách là 'anh/chị' hoặc 'quý khách' (tuyệt đối không xưng 'tôi', không gọi khách là 'ANONYMOUS').\n" +
-                "2. Sử dụng thông tin từ [DỮ LIỆU CHUYẾN XE TRA CỨU ĐƯỢC] bên dưới để trả lời chính xác, trung thực. Tuyệt đối không bịa đặt chuyến xe hoặc thông tin sai lệch.\n" +
-                "3. Khi khách hỏi về giá vé rẻ nhất, chuyến xe ngày mai, hoặc so sánh các chuyến: Phân tích kỹ dữ liệu để trả lời đúng yêu cầu, nêu bật giá vé (ví dụ: **150.000 VNĐ**), giờ khởi hành, tuyến đường, loại xe.\n" +
-                "4. Định dạng câu trả lời đẹp mắt bằng Markdown với danh sách gạch đầu dòng.\n" +
+                "QUY TẮC CỐT LÕI BẮT BUỘC TUÂN THỦ 100%:\n" +
+                "1. TUYỆT ĐỐI KHÔNG ĐƯỢC GIỚI THIỆU HOẶC LIỆT KÊ BẤT KỲ CHUYẾN XE NÀO CÓ THỜI GIAN KHỞI HÀNH TRONG QUÁ KHỨ (TRƯỚC " + nowStr + "). Bất kỳ chuyến xe nào có ngày khởi hành trước hôm nay (" + todayStr + ") đều là dữ liệu cũ, TUYỆT ĐỐI KHÔNG ĐƯỢC ĐỀ XUẤT CHO KHÁCH!\n" +
+                "2. Khi khách hỏi tìm chuyến vào một ngày cụ thể (ví dụ: 'sáng mai', 'ngày mai' = " + tomorrowStr + "):\n" +
+                "   - Hãy kiểm tra kỹ dữ liệu xem có chuyến xe nào đúng ngày " + tomorrowStr + " không.\n" +
+                "   - Nếu có chuyến xe đúng ngày " + tomorrowStr + ", hãy ưu tiên liệt kê các chuyến đó đầu tiên kèm giờ khởi hành, giá vé, loại xe.\n" +
+                "   - Nếu khách hỏi buổi sáng, hãy ưu tiên các chuyến có giờ khởi hành buổi sáng (từ 05:00 đến 11:59).\n" +
+                "   - Nếu KHÔNG có chuyến nào vào đúng ngày " + tomorrowStr + ", hãy thông báo rõ ràng, lịch sự và chỉ gợi ý các chuyến TRONG TƯƠNG LAI gần nhất (sau ngày " + todayStr + "). TUYỆT ĐỐI KHÔNG lấy các chuyến xe trong quá khứ!\n" +
+                "3. Luôn chào hỏi và xưng hô lịch sự là 'em' và gọi khách là 'anh/chị' hoặc 'quý khách' (tuyệt đối không xưng 'tôi', không gọi khách là 'ANONYMOUS').\n" +
+                "4. Định dạng Markdown đẹp mắt với bullet points.\n" +
                 "5. Luôn kèm thẻ [[BOOK_TRIP_ID:<id>]] cho các chuyến xe được nhắc đến để giao diện hiển thị nút Đặt vé nhanh cho khách.\n\n" +
                 "[LỊCH SỬ HỘI THOẠI]:\n" + (historyContext.isBlank() ? "Chưa có lịch sử." : historyContext) + "\n\n" +
-                "[DỮ LIỆU CHUYẾN XE TRA CỨU ĐƯỢC TỪ PGVECTOR & HỆ THỐNG]:\n" + ragContext + "\n\n" +
+                "[DỮ LIỆU CHUYẾN XE TRA CỨU ĐƯỢC TỪ HỆ THỐNG (TẤT CẢ ĐỀU TRONG TƯƠNG LAI)]:\n" + ragContext + "\n\n" +
                 "[CÂU HỎI CỦA KHÁCH HÀNG]:\n" + userQuestion + "\n\n" +
                 "Hãy trả lời khách hàng:";
     }
 
-    /**
-     * Domain Knowledge & Database Fallback:
-     * When external LLM / cloud service fails or API key is restricted,
-     * this fallback generates high-value domain responses from PostgreSQL database,
-     * ensuring zero downtime and providing booking buttons.
-     */
     public String buildDomainFallbackAnswer(String userQuestion, String ragContext) {
         String lower = userQuestion.toLowerCase(Locale.ROOT).trim();
+        LocalDateTime now = LocalDateTime.now();
 
         // 1. Identity & capabilities
         if (isIdentityQuestion(userQuestion)) {
@@ -499,7 +494,10 @@ public class ChatbotService {
 
         List<Trip> trips = Collections.emptyList();
         try {
-            trips = tripRepository.findAll();
+            trips = tripRepository.findAll().stream()
+                    .filter(t -> t.getDepartureTime() != null && t.getDepartureTime().isAfter(now))
+                    .filter(t -> !"CANCELLED".equalsIgnoreCase(t.getStatus()))
+                    .collect(Collectors.toList());
         } catch (Exception ignored) {}
 
         List<Trip> matchingTrips = new ArrayList<>();
@@ -513,6 +511,13 @@ public class ChatbotService {
             }
 
             if (!matchingTrips.isEmpty()) {
+                matchingTrips.sort((t1, t2) -> {
+                    int s1 = computeRelevance(t1, lower);
+                    int s2 = computeRelevance(t2, lower);
+                    if (s1 != s2) return Integer.compare(s2, s1);
+                    return t1.getDepartureTime().compareTo(t2.getDepartureTime());
+                });
+
                 StringBuilder sb = new StringBuilder();
                 sb.append("Dạ chào anh/chị! Dưới đây là các chuyến xe đến **").append(detectedDestination)
                   .append("** đang có sẵn trên hệ thống VEXE để anh/chị lựa chọn:\n\n");
@@ -569,9 +574,17 @@ public class ChatbotService {
         if (lower.contains("mai") || lower.contains("chuyến nào") || lower.contains("có những chuyến") 
                 || lower.contains("nổi bật") || lower.contains("phổ biến") || lower.contains("danh sách chuyến") || lower.contains("gợi ý")) {
             if (!trips.isEmpty()) {
+                List<Trip> sortedTrips = new ArrayList<>(trips);
+                sortedTrips.sort((t1, t2) -> {
+                    int s1 = computeRelevance(t1, lower);
+                    int s2 = computeRelevance(t2, lower);
+                    if (s1 != s2) return Integer.compare(s2, s1);
+                    return t1.getDepartureTime().compareTo(t2.getDepartureTime());
+                });
+
                 StringBuilder sb = new StringBuilder();
                 sb.append("Dạ chào anh/chị! Dưới đây là các chuyến xe sắp khởi hành đang có sẵn vé để anh/chị tham khảo:\n\n");
-                for (Trip t : trips.stream().limit(3).collect(Collectors.toList())) {
+                for (Trip t : sortedTrips.stream().limit(3).collect(Collectors.toList())) {
                     String dep = t.getRoute() != null ? t.getRoute().getDepartureLocation() : "N/A";
                     String arr = t.getRoute() != null ? t.getRoute().getArrivalLocation() : "N/A";
                     String vehicleType = t.getVehicle() != null ? t.getVehicle().getType() : "Tiêu chuẩn";
@@ -590,7 +603,7 @@ public class ChatbotService {
             }
         }
 
-        // 12. Question about trips in general (without specific destination)
+        // 12. Question about trips in general
         if (lower.contains("xe") || lower.contains("chuyến") || lower.contains("vé") || lower.contains("đặt") || lower.contains("đi đâu")) {
             if (!trips.isEmpty()) {
                 StringBuilder sb = new StringBuilder();
@@ -616,7 +629,7 @@ public class ChatbotService {
             return "Dạ anh/chị muốn khởi hành từ đâu và đến tỉnh thành nào ạ? (Ví dụ: *'Tìm xe Sài Gòn đi Đà Lạt tối nay'* hoặc *'Hà Nội đi Sapa sáng mai'*) để em tra cứu chuyến xe và giá vé chính xác nhất cho mình nhé!";
         }
 
-        // 13. General Unrecognized Query (Chitchat or out-of-scope)
+        // 13. General Unrecognized Query
         if (!trips.isEmpty()) {
             StringBuilder sb = new StringBuilder();
             sb.append("Dạ em là trợ lý AI chuyên về **tra cứu lộ trình, giá vé và hỗ trợ đặt vé xe khách** của VEXE.\n\n")
@@ -642,16 +655,74 @@ public class ChatbotService {
     }
 
     private int computeRelevance(Trip t, String lower) {
+        if (t.getDepartureTime() == null || !t.getDepartureTime().isAfter(LocalDateTime.now())) {
+            return -100000; // NEVER match past trips
+        }
         int score = 0;
         if (t.getRoute() != null) {
             String dep = t.getRoute().getDepartureLocation() != null ? t.getRoute().getDepartureLocation().toLowerCase(Locale.ROOT) : "";
             String arr = t.getRoute().getArrivalLocation() != null ? t.getRoute().getArrivalLocation().toLowerCase(Locale.ROOT) : "";
-            if (!dep.isEmpty() && lower.contains(dep)) score += 5;
-            if (!arr.isEmpty() && lower.contains(arr)) score += 5;
-            if ((dep.contains("hcm") || dep.contains("sài gòn")) && (lower.contains("sài gòn") || lower.contains("sai gon") || lower.contains("hcm") || lower.contains("tphcm"))) score += 5;
-            if ((arr.contains("phú yên") || arr.contains("tuy hòa")) && (lower.contains("phú yên") || lower.contains("phu yen") || lower.contains("tuy hòa") || lower.contains("tuy hoa"))) score += 5;
-            if ((dep.contains("phú yên") || dep.contains("tuy hòa")) && (lower.contains("phú yên") || lower.contains("phu yen") || lower.contains("tuy hòa") || lower.contains("tuy hoa"))) score += 5;
+            if (!dep.isEmpty() && lower.contains(dep)) score += 30;
+            if (!arr.isEmpty() && lower.contains(arr)) score += 30;
+            if ((dep.contains("hcm") || dep.contains("sài gòn")) && (lower.contains("sài gòn") || lower.contains("sai gon") || lower.contains("hcm") || lower.contains("tphcm"))) score += 30;
+            if ((arr.contains("phú yên") || arr.contains("tuy hòa")) && (lower.contains("phú yên") || lower.contains("phu yen") || lower.contains("tuy hòa") || lower.contains("tuy hoa"))) score += 30;
+            if ((dep.contains("phú yên") || dep.contains("tuy hòa")) && (lower.contains("phú yên") || lower.contains("phu yen") || lower.contains("tuy hòa") || lower.contains("tuy hoa"))) score += 30;
+            if ((arr.contains("sapa") || arr.contains("sa pa")) && (lower.contains("sapa") || lower.contains("sa pa"))) score += 40;
+            if ((dep.contains("hà nội") || dep.contains("ha noi")) && (lower.contains("hà nội") || lower.contains("ha noi"))) score += 40;
+            if ((arr.contains("đà lạt") || arr.contains("da lat")) && (lower.contains("đà lạt") || lower.contains("da lat"))) score += 40;
+            if ((arr.contains("đà nẵng") || arr.contains("da nang")) && (lower.contains("đà nẵng") || lower.contains("da nang"))) score += 40;
+            if ((arr.contains("nha trang") || arr.contains("nha trang")) && (lower.contains("nha trang") || lower.contains("nha trang"))) score += 40;
         }
+
+        // Target date matching (hôm nay, ngày mai, sáng mai, etc.):
+        LocalDate targetDate = extractTargetDate(lower);
+        if (targetDate != null) {
+            if (t.getDepartureTime().toLocalDate().isEqual(targetDate)) {
+                score += 500; // MASSIVE boost for trips on the exact requested date!
+            } else {
+                long daysDiff = Math.abs(java.time.temporal.ChronoUnit.DAYS.between(targetDate, t.getDepartureTime().toLocalDate()));
+                score -= (int) (daysDiff * 25);
+            }
+        }
+
+        // Target time slot matching (sáng / trưa / chiều / tối):
+        String targetTimeSlot = extractTargetTimeSlot(lower);
+        if (targetTimeSlot != null) {
+            int hour = t.getDepartureTime().getHour();
+            if ("MORNING".equals(targetTimeSlot) && hour >= 4 && hour < 12) score += 100;
+            else if ("AFTERNOON".equals(targetTimeSlot) && hour >= 12 && hour < 18) score += 100;
+            else if ("EVENING".equals(targetTimeSlot) && (hour >= 18 || hour < 4)) score += 100;
+        }
+
         return score;
+    }
+
+    private LocalDate extractTargetDate(String lower) {
+        LocalDate today = LocalDate.now();
+        if (lower.contains("hôm nay") || lower.contains("hom nay")) {
+            return today;
+        }
+        if (lower.contains("ngày mai") || lower.contains("ngay mai") || lower.contains("sáng mai") 
+                || lower.contains("sang mai") || lower.contains("tối mai") || lower.contains("toi mai") 
+                || lower.contains("chiều mai") || lower.contains("chieu mai") || lower.contains("mai")) {
+            return today.plusDays(1);
+        }
+        if (lower.contains("ngày mốt") || lower.contains("ngay mot") || lower.contains("hôm kia")) {
+            return today.plusDays(2);
+        }
+        return null;
+    }
+
+    private String extractTargetTimeSlot(String lower) {
+        if (lower.contains("sáng") || lower.contains("sang") || lower.contains("buổi sáng") || lower.contains("sáng sớm")) {
+            return "MORNING";
+        }
+        if (lower.contains("trưa") || lower.contains("trua") || lower.contains("chiều") || lower.contains("chieu") || lower.contains("buổi chiều")) {
+            return "AFTERNOON";
+        }
+        if (lower.contains("tối") || lower.contains("toi") || lower.contains("đêm") || lower.contains("dem") || lower.contains("buổi tối")) {
+            return "EVENING";
+        }
+        return null;
     }
 }

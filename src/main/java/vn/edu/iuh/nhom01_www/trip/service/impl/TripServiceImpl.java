@@ -43,7 +43,18 @@ public class TripServiceImpl implements TripService {
 
     @Override
     public List<Trip> getAllTrips() {
-        List<Trip> trips = tripRepository.findAll();
+        return getAllTrips(200);
+    }
+
+    @Override
+    public List<Trip> getAllTrips(Integer limit) {
+        int max = (limit != null && limit > 0) ? Math.min(limit, 500) : 200;
+        Pageable pageable = PageRequest.of(0, max);
+        LocalDateTime since = LocalDateTime.now().minusHours(24);
+        List<Trip> trips = tripRepository.findAllUpcomingWithDetails(since, pageable);
+        if (trips.isEmpty()) {
+            trips = tripRepository.findAllRecentWithDetails(pageable);
+        }
         trips.forEach(this::populateAvailableSeats);
         return trips;
     }

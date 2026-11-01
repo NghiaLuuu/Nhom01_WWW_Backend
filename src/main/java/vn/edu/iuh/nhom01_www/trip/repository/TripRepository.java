@@ -34,6 +34,19 @@ public interface TripRepository extends JpaRepository<Trip, Long> {
     @Query("SELECT t FROM Trip t " +
            "JOIN FETCH t.route r " +
            "LEFT JOIN FETCH t.vehicle v " +
+           "WHERE t.departureTime >= :since " +
+           "ORDER BY t.departureTime ASC")
+    List<Trip> findAllUpcomingWithDetails(@Param("since") LocalDateTime since, Pageable pageable);
+
+    @Query("SELECT t FROM Trip t " +
+           "JOIN FETCH t.route r " +
+           "LEFT JOIN FETCH t.vehicle v " +
+           "ORDER BY t.departureTime DESC")
+    List<Trip> findAllRecentWithDetails(Pageable pageable);
+
+    @Query("SELECT t FROM Trip t " +
+           "JOIN FETCH t.route r " +
+           "LEFT JOIN FETCH t.vehicle v " +
            "WHERE LOWER(r.departureLocation) LIKE LOWER(CONCAT('%', :dep, '%')) " +
            "AND LOWER(r.arrivalLocation) LIKE LOWER(CONCAT('%', :arr, '%')) " +
            "AND t.departureTime >= :startDate " +

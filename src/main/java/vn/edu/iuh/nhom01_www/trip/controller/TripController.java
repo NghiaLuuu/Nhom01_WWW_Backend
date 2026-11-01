@@ -22,8 +22,8 @@ public class TripController {
 
     @GetMapping
     @PreAuthorize("hasAuthority('TRIP_MANAGE')")
-    public ResponseEntity<ApiResponse<List<Trip>>> getAllTrips() {
-        return ResponseEntity.ok(new ApiResponse<>(true, "Success", tripService.getAllTrips()));
+    public ResponseEntity<ApiResponse<List<Trip>>> getAllTrips(@RequestParam(required = false) Integer limit) {
+        return ResponseEntity.ok(new ApiResponse<>(true, "Success", tripService.getAllTrips(limit)));
     }
 
     @GetMapping("/search")
