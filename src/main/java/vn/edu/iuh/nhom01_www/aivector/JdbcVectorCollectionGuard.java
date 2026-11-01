@@ -54,9 +54,15 @@ class JdbcVectorCollectionGuard implements VectorCollectionGuard {
                 || identity.dimensions() <= 0) {
             throw new VectorCollectionModelMismatchException("Embedding identity configuration is incomplete");
         }
-        int modelDimensions = embeddingModel.dimensions();
-        if (modelDimensions > 0 && modelDimensions != identity.dimensions()) {
-            throw new VectorCollectionModelMismatchException("Configured embedding dimensions do not match the active EmbeddingModel");
+        try {
+            int modelDimensions = embeddingModel.dimensions();
+            if (modelDimensions > 0 && modelDimensions != identity.dimensions()) {
+                throw new VectorCollectionModelMismatchException("Configured embedding dimensions do not match the active EmbeddingModel");
+            }
+        } catch (VectorCollectionModelMismatchException e) {
+            throw e;
+        } catch (Exception e) {
+            // When external OpenAI API is offline or 401, fall back safely to configured dimensions
         }
         return identity;
     }

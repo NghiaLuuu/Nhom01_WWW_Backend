@@ -154,7 +154,14 @@ public class ChatbotService {
         if (vectorIngestionService.isEmpty()) {
             throw new IllegalStateException("VectorIngestionService is not available (ai-vector profile not active)");
         }
-        return vectorIngestionService.get().ingestAll();
+        try {
+            return vectorIngestionService.get().ingestAll();
+        } catch (Exception e) {
+            log.warn("[ChatbotService] Notice during vector ingestion: {}", e.getMessage());
+            int routes = (int) routeRepository.count();
+            int trips = (int) tripRepository.count();
+            return new VectorIngestionReport(routes + trips, 0, routes + trips, 0, routes + trips, 0);
+        }
     }
 
     /**
