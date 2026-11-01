@@ -397,7 +397,7 @@ public class ChatbotService {
             List<Trip> eligibleTrips = allTrips.stream()
                     .filter(t -> isTripEligible(t, isHistoryQuery, now))
                     .collect(Collectors.toList());
-            List<Trip> candidateTrips = eligibleTrips.isEmpty() ? allTrips : eligibleTrips;
+            List<Trip> candidateTrips = isHistoryQuery ? allTrips : eligibleTrips;
 
             if (!candidateTrips.isEmpty()) {
                 LocalDate targetDate = extractTargetDate(lower);
@@ -578,7 +578,7 @@ public class ChatbotService {
         List<Trip> eligibleTrips = trips.stream()
                 .filter(t -> isTripEligible(t, false, now))
                 .collect(Collectors.toList());
-        List<Trip> activeTrips = eligibleTrips.isEmpty() ? trips : eligibleTrips;
+        List<Trip> activeTrips = eligibleTrips;
 
         LocalDate targetDate = extractTargetDate(lower);
         Integer targetTimeOfDay = extractTargetTimeOfDay(lower);
