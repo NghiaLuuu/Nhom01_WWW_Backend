@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres_db_local:
     image: pgvector/pgvector:0.8.7-pg16-bookworm
@@ -27,6 +25,11 @@ services:
     restart: always
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - busbooking-network
 
@@ -40,15 +43,22 @@ services:
       DB_HOST: postgres_db_local
       DB_PORT: 5432
       REDIS_HOST: redis_local
+      REDIS_PORT: 6379
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     depends_on:
-      - postgres_db_local
-      - redis_local
+      postgres_db_local:
+        condition: service_healthy
+      redis_local:
+        condition: service_healthy
     networks:
       - busbooking-network
 
 volumes:
   postgres_data:
+    name: nhom01_www_backend_postgres_data
+    external: true
 
 networks:
   busbooking-network:
+    name: nhom01_www_backend_busbooking-network
     driver: bridge

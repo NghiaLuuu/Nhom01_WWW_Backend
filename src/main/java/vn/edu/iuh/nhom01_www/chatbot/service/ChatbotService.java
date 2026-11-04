@@ -22,13 +22,20 @@ import java.math.BigDecimal;
 import java.text.NumberFormat;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import vn.edu.iuh.nhom01_www.chatbot.booking.dto.TripSearchResultDto;
+import vn.edu.iuh.nhom01_www.chatbot.booking.service.BookingAssistantService;
+import vn.edu.iuh.nhom01_www.chatbot.cancellation.service.CancellationAssistantService;
+import vn.edu.iuh.nhom01_www.chatbot.dto.ChatIntent;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class ChatbotService {
 
     private final ChatModel chatModel;
@@ -36,6 +43,59 @@ public class ChatbotService {
     private final Optional<VectorIngestionService> vectorIngestionService;
     private final TripRepository tripRepository;
     private final RouteRepository routeRepository;
+    private final Optional<BookingAssistantService> bookingAssistantService;
+    private final Optional<CancellationAssistantService> cancellationAssistantService;
+    private final ChatIntentClassifier intentClassifier;
+
+    public ChatbotService(
+            ChatModel chatModel,
+            Optional<VectorSearchService> vectorSearchService,
+            Optional<VectorIngestionService> vectorIngestionService,
+            TripRepository tripRepository,
+            RouteRepository routeRepository) {
+        this(chatModel, vectorSearchService, vectorIngestionService, tripRepository, routeRepository, Optional.empty(), Optional.empty(), new ChatIntentClassifier());
+    }
+
+    public ChatbotService(
+            ChatModel chatModel,
+            Optional<VectorSearchService> vectorSearchService,
+            Optional<VectorIngestionService> vectorIngestionService,
+            TripRepository tripRepository,
+            RouteRepository routeRepository,
+            Optional<BookingAssistantService> bookingAssistantService) {
+        this(chatModel, vectorSearchService, vectorIngestionService, tripRepository, routeRepository, bookingAssistantService, Optional.empty(), new ChatIntentClassifier());
+    }
+
+    public ChatbotService(
+            ChatModel chatModel,
+            Optional<VectorSearchService> vectorSearchService,
+            Optional<VectorIngestionService> vectorIngestionService,
+            TripRepository tripRepository,
+            RouteRepository routeRepository,
+            Optional<BookingAssistantService> bookingAssistantService,
+            Optional<CancellationAssistantService> cancellationAssistantService) {
+        this(chatModel, vectorSearchService, vectorIngestionService, tripRepository, routeRepository, bookingAssistantService, cancellationAssistantService, new ChatIntentClassifier());
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public ChatbotService(
+            ChatModel chatModel,
+            Optional<VectorSearchService> vectorSearchService,
+            Optional<VectorIngestionService> vectorIngestionService,
+            TripRepository tripRepository,
+            RouteRepository routeRepository,
+            Optional<BookingAssistantService> bookingAssistantService,
+            Optional<CancellationAssistantService> cancellationAssistantService,
+            ChatIntentClassifier intentClassifier) {
+        this.chatModel = chatModel;
+        this.vectorSearchService = vectorSearchService;
+        this.vectorIngestionService = vectorIngestionService;
+        this.tripRepository = tripRepository;
+        this.routeRepository = routeRepository;
+        this.bookingAssistantService = bookingAssistantService != null ? bookingAssistantService : Optional.empty();
+        this.cancellationAssistantService = cancellationAssistantService != null ? cancellationAssistantService : Optional.empty();
+        this.intentClassifier = intentClassifier != null ? intentClassifier : new ChatIntentClassifier();
+    }
 
     private final ObjectMapper objectMapper = new ObjectMapper()
             .registerModule(new JavaTimeModule())
@@ -46,6 +106,17 @@ public class ChatbotService {
     private static final NumberFormat CURRENCY_FORMATTER = NumberFormat.getInstance(new Locale("vi", "VN"));
 
     public Map<String, Object> ask(ChatbotRequest request, String currentUserEmail) {
+        // Structured interactive actions routing (bypass text checks)
+        if (request.getAction() != null && !request.getAction().isBlank()) {
+            String act = request.getAction().trim().toUpperCase(Locale.ROOT);
+            if ((act.contains("CANCEL") || act.contains("KEEP")) && cancellationAssistantService.isPresent()) {
+                return cancellationAssistantService.get().assistCancellation(request, currentUserEmail);
+            }
+            if (bookingAssistantService.isPresent()) {
+                return bookingAssistantService.get().assistBooking(request, currentUserEmail);
+            }
+        }
+
         String userQuestion = request.getQuestion();
         if (userQuestion == null || userQuestion.trim().isEmpty()) {
             return Map.of("answer", "Xin chào! Bạn cần tìm chuyến xe hoặc thông tin vé đi đâu ạ?");
@@ -64,6 +135,63 @@ public class ChatbotService {
         if (securityRefusal != null) {
             log.warn("[Security Firewall] Blocked sensitive/unsafe query from '{}': '{}'", currentUserEmail, userQuestion);
             return Map.of("answer", securityRefusal, "matchedCount", 0);
+        }
+
+        // Stage 0.4: Unified Intent Classification & Context Isolation
+        String sessionKey = (request.getSessionId() != null && !request.getSessionId().isBlank())
+                ? request.getSessionId()
+                : ((request.getConversationId() != null && !request.getConversationId().isBlank())
+                    ? request.getConversationId()
+                    : "session_" + currentUserEmail);
+
+        boolean hasActiveBooking = bookingAssistantService.map(s -> s.hasActiveBookingFlow(sessionKey)).orElse(false);
+        ChatIntent intent = intentClassifier.classify(userQuestion, hasActiveBooking);
+        log.info("[ChatbotRouter] Query '{}' classified as intent '{}' (hasActiveBooking={})", userQuestion, intent, hasActiveBooking);
+
+        switch (intent) {
+            case CANCEL_TICKET -> {
+                if (bookingAssistantService.isPresent()) {
+                    bookingAssistantService.get().resetBookingSession(sessionKey);
+                }
+                if (cancellationAssistantService.isPresent()) {
+                    return cancellationAssistantService.get().assistCancellation(request, currentUserEmail);
+                }
+            }
+            case VIEW_MY_BOOKINGS -> {
+                if (bookingAssistantService.isPresent()) {
+                    bookingAssistantService.get().resetBookingSession(sessionKey);
+                }
+                if (currentUserEmail == null || "ANONYMOUS".equalsIgnoreCase(currentUserEmail)) {
+                    return Map.of(
+                            "answer", "⚠️ **Yêu cầu đăng nhập**: Quý khách vui lòng đăng nhập tài khoản trên hệ thống VEXE để kiểm tra và quản lý danh sách vé xe đã đặt của mình ạ.",
+                            "status", "UNAUTHORIZED"
+                    );
+                }
+                if (cancellationAssistantService.isPresent()) {
+                    return cancellationAssistantService.get().assistCancellation(request, currentUserEmail);
+                }
+            }
+            case PAYMENT_STATUS -> {
+                if (bookingAssistantService.isPresent()) {
+                    return bookingAssistantService.get().assistBooking(request, currentUserEmail);
+                }
+            }
+            case BOOK_TICKET -> {
+                if (bookingAssistantService.isPresent()) {
+                    return bookingAssistantService.get().assistBooking(request, currentUserEmail);
+                }
+            }
+            case SEARCH_TRIPS -> {
+                if (bookingAssistantService.isPresent()) {
+                    bookingAssistantService.get().resetBookingSession(sessionKey);
+                    return handleSearchTrips(userQuestion, request, currentUserEmail);
+                }
+                // When bookingAssistantService is not present (e.g. pure AI vector / RAG testing mode),
+                // fall-through to Vector Search RAG pipeline below.
+            }
+            case GENERAL_CHAT -> {
+                // Continue to natural conversation handling below
+            }
         }
 
         // Stage 1: Natural Conversational Intent Handling (Fast, empathetic, context-aware)
@@ -724,5 +852,259 @@ public class ChatbotService {
             return "EVENING";
         }
         return null;
+    }
+
+    public Map<String, Object> assistBooking(ChatbotRequest request, String currentUserEmail) {
+        String question = request.getQuestion();
+        String sessionKey = (request.getSessionId() != null && !request.getSessionId().isBlank())
+                ? request.getSessionId()
+                : ((request.getConversationId() != null && !request.getConversationId().isBlank())
+                    ? request.getConversationId()
+                    : "session_" + currentUserEmail);
+
+        boolean hasActiveBooking = bookingAssistantService.map(s -> s.hasActiveBookingFlow(sessionKey)).orElse(false);
+        ChatIntent intent = intentClassifier.classify(question, hasActiveBooking);
+
+        if (intent == ChatIntent.CANCEL_TICKET || intent == ChatIntent.VIEW_MY_BOOKINGS) {
+            if (bookingAssistantService.isPresent()) {
+                bookingAssistantService.get().resetBookingSession(sessionKey);
+            }
+            if (cancellationAssistantService.isPresent()) {
+                return cancellationAssistantService.get().assistCancellation(request, currentUserEmail);
+            }
+        } else if (intent == ChatIntent.SEARCH_TRIPS) {
+            if (bookingAssistantService.isPresent()) {
+                bookingAssistantService.get().resetBookingSession(sessionKey);
+            }
+            return handleSearchTrips(question, request, currentUserEmail);
+        } else if (intent == ChatIntent.BOOK_TICKET || intent == ChatIntent.PAYMENT_STATUS) {
+            if (bookingAssistantService.isPresent()) {
+                return bookingAssistantService.get().assistBooking(request, currentUserEmail);
+            }
+        }
+        return ask(request, currentUserEmail);
+    }
+
+    public Map<String, Object> assistCancellation(ChatbotRequest request, String currentUserEmail) {
+        String question = request.getQuestion();
+        String sessionKey = (request.getSessionId() != null && !request.getSessionId().isBlank())
+                ? request.getSessionId()
+                : ((request.getConversationId() != null && !request.getConversationId().isBlank())
+                    ? request.getConversationId()
+                    : "session_" + currentUserEmail);
+
+        boolean hasActiveBooking = bookingAssistantService.map(s -> s.hasActiveBookingFlow(sessionKey)).orElse(false);
+        ChatIntent intent = intentClassifier.classify(question, hasActiveBooking);
+
+        if (intent == ChatIntent.BOOK_TICKET || intent == ChatIntent.PAYMENT_STATUS) {
+            if (bookingAssistantService.isPresent()) {
+                return bookingAssistantService.get().assistBooking(request, currentUserEmail);
+            }
+        } else if (intent == ChatIntent.SEARCH_TRIPS) {
+            return handleSearchTrips(question, request, currentUserEmail);
+        } else if (intent == ChatIntent.CANCEL_TICKET || intent == ChatIntent.VIEW_MY_BOOKINGS) {
+            if (cancellationAssistantService.isPresent()) {
+                return cancellationAssistantService.get().assistCancellation(request, currentUserEmail);
+            }
+        }
+        return ask(request, currentUserEmail);
+    }
+
+    public Map<String, Object> handleSearchTrips(String userQuestion, ChatbotRequest request, String currentUserEmail) {
+        String lower = userQuestion.toLowerCase(Locale.ROOT);
+        ZoneId vnZone = ZoneId.of("Asia/Ho_Chi_Minh");
+        LocalDate today = LocalDate.now(vnZone);
+        LocalDateTime now = LocalDateTime.now(vnZone);
+
+        // 1. Determine target date
+        LocalDate targetDate = null;
+        if (lower.contains("ngày mai") || lower.contains("ngay mai") || lower.contains("mai") || lower.contains("tomorrow")) {
+            targetDate = today.plusDays(1);
+        } else if (lower.contains("hôm nay") || lower.contains("hom nay") || lower.contains("tối nay") || lower.contains("sáng nay")) {
+            targetDate = today;
+        } else if (lower.contains("ngày mốt") || lower.contains("ngày kia")) {
+            targetDate = today.plusDays(2);
+        }
+
+        // 2. Extract origin & destination if explicitly mentioned
+        String dep = null;
+        String arr = null;
+
+        Matcher m1 = Pattern.compile("(?iu)(?:từ|tu|from)\\s+([a-zA-Z0-9\\s\\p{L}]+?)\\s+(?:đến|den|đi|di|về|ve|to)\\s+([a-zA-Z0-9\\s\\p{L}]+?)(?:\\s+ngày|\\s+lúc|\\s+vào|\\s+tối|\\s+sáng|\\s+trưa|\\s+chiều|\\s+mai|\\s+hôm|\\s*$)").matcher(userQuestion);
+        if (m1.find()) {
+            dep = cleanSearchLocation(m1.group(1));
+            arr = cleanSearchLocation(m1.group(2));
+        } else {
+            Matcher m2 = Pattern.compile("(?iu)(?:xe|chuyến|tìm\\s+xe)?\\s*([a-zA-Z0-9\\s\\p{L}]+?)\\s+(?:đến|den|đi|di|về|ve|to)\\s+([a-zA-Z0-9\\s\\p{L}]+?)(?:\\s+ngày|\\s+lúc|\\s+vào|\\s+tối|\\s+sáng|\\s+trưa|\\s+chiều|\\s+mai|\\s+hôm|\\s*$)").matcher(userQuestion);
+            if (m2.find()) {
+                String candidateDep = cleanSearchLocation(m2.group(1));
+                String candidateArr = cleanSearchLocation(m2.group(2));
+                if (isLikelyCity(candidateDep) && isLikelyCity(candidateArr)) {
+                    dep = candidateDep;
+                    arr = candidateArr;
+                } else if (isLikelyCity(candidateArr)) {
+                    arr = candidateArr;
+                }
+            }
+        }
+
+        // If specific route info was provided (e.g. "Xe Sài Gòn đi Đà Lạt")
+        if (bookingAssistantService.isPresent() && (dep != null || arr != null)) {
+            String dateStr = targetDate != null ? targetDate.toString() : null;
+            List<TripSearchResultDto> searchDtos = bookingAssistantService.get().getBookingTools().searchAvailableTrips(
+                    dep, arr, dateStr, null, null, 1
+            );
+
+            if (!searchDtos.isEmpty()) {
+                StringBuilder sb = new StringBuilder();
+                String routeTitle = (dep != null && arr != null)
+                        ? "**" + dep + "** ➔ **" + arr + "**"
+                        : (arr != null ? "đến **" + arr + "**" : "từ **" + dep + "**");
+                String dateTitle = targetDate != null ? " vào ngày **" + targetDate.format(DateTimeFormatter.ofPattern("dd/MM/yyyy")) + "**" : "";
+
+                sb.append(String.format("🚌 **DANH SÁCH CHUYẾN XE %s%s:**\n\n", routeTitle, dateTitle));
+                sb.append("Em tìm thấy các chuyến xe phù hợp đang mở bán trên hệ thống VEXE để anh/chị tham khảo:\n\n");
+
+                for (int i = 0; i < Math.min(searchDtos.size(), 5); i++) {
+                    TripSearchResultDto t = searchDtos.get(i);
+                    sb.append(String.format("- 🚌 **Chuyến #%d**: %s ➔ %s\n", t.getTripId(), t.getDepartureLocation(), t.getArrivalLocation()))
+                      .append(String.format("  • Khởi hành: **%s**\n", t.getDepartureTimeFormatted()))
+                      .append(String.format("  • Loại xe: %s (%d chỗ trống)\n", t.getVehicleType(), t.getAvailableSeats()))
+                      .append(String.format("  • Giá vé: **%s**\n", t.getPriceFormatted()))
+                      .append(String.format("  • [[BOOK_TRIP_ID:%d]]\n\n", t.getTripId()));
+                }
+                sb.append("👉 *Anh/chị có thể bấm 'Chọn chuyến này' bên dưới hoặc nhắn 'Đặt vé chuyến #<mã_chuyến>' để em hỗ trợ giữ chỗ nhé!*");
+
+                Map<String, Object> res = new LinkedHashMap<>();
+                res.put("answer", sb.toString());
+                res.put("status", "TRIPS_FOUND");
+                res.put("cardType", "TRIP_LIST");
+                res.put("trips", searchDtos);
+                return res;
+            } else if (dep != null && arr != null) {
+                String dateTitle = targetDate != null ? " vào ngày **" + targetDate.format(DateTimeFormatter.ofPattern("dd/MM/yyyy")) + "**" : "";
+                return Map.of(
+                        "answer", "Dạ hiện tại hệ thống VEXE chưa có chuyến xe nào từ **" + dep + "** đến **" + arr + "**" + dateTitle + " còn chỗ trống mở bán ạ. Anh/chị có thể kiểm tra ngày khác hoặc xem các chuyến lân cận nhé!",
+                        "status", "NO_TRIPS_FOUND"
+                );
+            }
+        }
+
+        // Query database trips directly (e.g. for "Các chuyến xe khởi hành vào ngày mai" without route)
+        List<Trip> trips;
+        if (targetDate != null) {
+            LocalDateTime start = targetDate.atStartOfDay();
+            LocalDateTime end = targetDate.atTime(LocalTime.MAX);
+            trips = tripRepository.findAll().stream()
+                    .filter(t -> t.getDepartureTime() != null
+                            && !t.getDepartureTime().isBefore(start)
+                            && !t.getDepartureTime().isAfter(end)
+                            && !"CANCELLED".equalsIgnoreCase(t.getStatus()))
+                    .sorted(Comparator.comparing(Trip::getDepartureTime))
+                    .toList();
+        } else {
+            trips = tripRepository.findAll().stream()
+                    .filter(t -> t.getDepartureTime() != null && t.getDepartureTime().isAfter(now)
+                            && !"CANCELLED".equalsIgnoreCase(t.getStatus()))
+                    .sorted(Comparator.comparing(Trip::getDepartureTime))
+                    .toList();
+        }
+
+        if (trips.isEmpty()) {
+            String dateTitle = targetDate != null ? " vào ngày **" + targetDate.format(DateTimeFormatter.ofPattern("dd/MM/yyyy")) + "**" : " sắp tới";
+            return Map.of(
+                    "answer", "Dạ hiện tại hệ thống chưa tìm thấy chuyến xe nào khởi hành" + dateTitle + " đang mở bán ạ. Anh/chị vui lòng kiểm tra ngày khác hoặc cho em biết điểm đi và điểm đến cụ thể để em lọc chuyến nhé!",
+                    "status", "NO_TRIPS_FOUND"
+            );
+        }
+
+        List<TripSearchResultDto> tripDtos = new ArrayList<>();
+        List<Trip> displayTrips = trips.stream().limit(6).toList();
+
+        StringBuilder sb = new StringBuilder();
+        String dateHeader = targetDate != null ? " VÀO NGÀY " + targetDate.format(DateTimeFormatter.ofPattern("dd/MM/yyyy")) : "";
+        sb.append("🚌 **CÁC CHUYẾN XE KHỞI HÀNH").append(dateHeader).append(" TRÊN HỆ THỐNG VEXE:**\n\n");
+        sb.append("Dưới đây là một số chuyến xe tiêu biểu đang sẵn vé để anh/chị tham khảo:\n\n");
+
+        for (Trip t : displayTrips) {
+            String depLoc = t.getRoute() != null ? t.getRoute().getDepartureLocation() : "N/A";
+            String arrLoc = t.getRoute() != null ? t.getRoute().getArrivalLocation() : "N/A";
+            String vType = t.getVehicle() != null ? t.getVehicle().getType() : "Tiêu chuẩn";
+            int cap = t.getVehicle() != null ? t.getVehicle().getCapacity() : 34;
+            String priceStr = t.getPrice() != null ? CURRENCY_FORMATTER.format(t.getPrice()) + " VNĐ" : "250.000 VNĐ";
+            String timeStr = t.getDepartureTime() != null ? TIME_FORMATTER.format(t.getDepartureTime()) : "Hôm nay";
+
+            TripSearchResultDto dto = TripSearchResultDto.builder()
+                    .tripId(t.getId())
+                    .routeId(t.getRoute() != null ? t.getRoute().getId() : null)
+                    .departureLocation(depLoc)
+                    .arrivalLocation(arrLoc)
+                    .departureTime(t.getDepartureTime())
+                    .departureTimeFormatted(timeStr)
+                    .price(t.getPrice())
+                    .priceFormatted(priceStr)
+                    .vehicleType(vType)
+                    .totalSeats(cap)
+                    .availableSeats(cap)
+                    .status("ACTIVE")
+                    .build();
+            tripDtos.add(dto);
+
+            sb.append(String.format("- 🚌 **Chuyến #%d**: %s ➔ %s\n", t.getId(), depLoc, arrLoc))
+              .append(String.format("  • Khởi hành: **%s**\n", timeStr))
+              .append(String.format("  • Loại xe: %s\n", vType))
+              .append(String.format("  • Giá vé: **%s**\n", priceStr))
+              .append(String.format("  • [[BOOK_TRIP_ID:%d]]\n\n", t.getId()));
+        }
+        sb.append("💡 *Để tìm chuyến chuẩn xác nhất, anh/chị có thể cho em biết thêm điểm đi và điểm đến mong muốn (ví dụ: 'Xe Sài Gòn đi Đà Lạt') nhé!*");
+
+        Map<String, Object> res = new LinkedHashMap<>();
+        res.put("answer", sb.toString());
+        res.put("status", "TRIPS_FOUND");
+        res.put("cardType", "TRIP_LIST");
+        res.put("trips", tripDtos);
+        return res;
+    }
+
+    private String cleanSearchLocation(String loc) {
+        if (loc == null) return null;
+        String s = loc.trim();
+        s = s.replaceAll("(?iu)^(?:xe|vé|chuyến|đi|đến|từ|về|ở|tại|tìm|tra\\s*cứu|giúp|tôi|cho)\\s+", "");
+        s = s.replaceAll("(?iu)\\s+(?:ngày|lúc|vào|tối|sáng|trưa|chiều|mai|hôm).*$", "");
+        s = s.trim();
+        return s.isEmpty() ? null : s;
+    }
+
+    private boolean isLikelyCity(String s) {
+        if (s == null || s.isBlank()) return false;
+        String lower = s.toLowerCase(Locale.ROOT);
+        return !lower.contains("chuyến") && !lower.contains("ngày") && !lower.contains("mai") && !lower.contains("vé") && !lower.contains("hủy");
+    }
+
+    private boolean isCancellationIntent(String text) {
+        if (text == null) return false;
+        String lower = text.toLowerCase(Locale.ROOT).trim();
+        return lower.startsWith("hủy giúp") || lower.startsWith("hủy vé") || lower.startsWith("hủy chuyến")
+                || lower.contains("hủy vé") || lower.contains("hủy đơn") || lower.contains("trả vé")
+                || lower.contains("xác nhận hủy") || lower.contains("giữ lại vé")
+                || lower.startsWith("select_booking_to_cancel") || lower.startsWith("confirm_cancellation")
+                || lower.startsWith("keep_tickets")
+                || lower.contains("muốn hủy");
+    }
+
+    private boolean isFindMyBookingsIntent(String text) {
+        if (text == null) return false;
+        String lower = text.toLowerCase(Locale.ROOT).trim();
+        return lower.contains("vé của tôi")
+                || lower.contains("vé đã mua")
+                || lower.contains("vé đang có")
+                || lower.contains("vé hiện có")
+                || lower.contains("vé có hiệu lực")
+                || lower.contains("kiểm tra vé")
+                || lower.contains("xem vé")
+                || lower.contains("tra cứu vé")
+                || lower.contains("danh sách vé")
+                || lower.contains("đơn đặt vé của tôi")
+                || lower.contains("lịch sử đặt vé");
     }
 }

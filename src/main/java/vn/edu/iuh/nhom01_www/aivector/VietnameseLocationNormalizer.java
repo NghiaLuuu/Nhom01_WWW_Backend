@@ -8,7 +8,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /** Normalizes common Vietnamese location aliases for vector metadata filters. */
-final class VietnameseLocationNormalizer {
+public final class VietnameseLocationNormalizer {
 
     private static final Pattern DIRECTIONAL_QUERY = Pattern.compile(
             "(?iu)\\btừ\\s+(.+?)\\s+(?:đến|đi)\\s+(.+?)(?:[?.!,;:]|$)");
@@ -16,6 +16,8 @@ final class VietnameseLocationNormalizer {
             Map.entry("sai gon", "tp hcm"),
             Map.entry("ho chi minh", "tp hcm"),
             Map.entry("thanh pho ho chi minh", "tp hcm"),
+            Map.entry("tp ho chi minh", "tp hcm"),
+            Map.entry("thanh pho hcm", "tp hcm"),
             Map.entry("tp hcm", "tp hcm"),
             Map.entry("tphcm", "tp hcm"),
             Map.entry("hcm", "tp hcm"),
@@ -34,9 +36,14 @@ final class VietnameseLocationNormalizer {
             Map.entry("ha long", "ha long"),
             Map.entry("hai phong", "hai phong"),
             Map.entry("sapa", "sapa"),
-            Map.entry("sa pa", "sapa"));
+            Map.entry("sa pa", "sapa"),
+            Map.entry("plei ku", "pleiku"),
+            Map.entry("pleiku", "pleiku"),
+            Map.entry("gia lai", "pleiku"),
+            Map.entry("tinh gia lai", "pleiku"),
+            Map.entry("tp pleiku", "pleiku"));
 
-    String normalize(String location) {
+    public String normalize(String location) {
         if (location == null || location.isBlank()) {
             return "";
         }
@@ -48,7 +55,7 @@ final class VietnameseLocationNormalizer {
         return ALIASES.getOrDefault(decomposed, decomposed);
     }
 
-    Optional<DirectionalLocation> directionalLocations(String query) {
+    public Optional<DirectionalLocation> directionalLocations(String query) {
         String candidate = query == null ? "" : query;
         // A multi-leg request has no unambiguous pair for an exact metadata filter. Keep
         // semantic retrieval available rather than falsely treating the first/last city as one route.
@@ -76,6 +83,6 @@ final class VietnameseLocationNormalizer {
         return count;
     }
 
-    record DirectionalLocation(String departure, String arrival) {
+    public record DirectionalLocation(String departure, String arrival) {
     }
 }

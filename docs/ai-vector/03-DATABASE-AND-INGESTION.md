@@ -1,40 +1,32 @@
-# Database và ingestion
+# Database và Ingestion trong Kiến trúc Hợp nhất
 
-## Migrations
+## 1. Migrations trên Database Chung (`busbooking`)
 
-| File | Nội dung |
-|---|---|
-| `001-enable-pgvector.sql` | `CREATE EXTENSION vector` |
-| `002-create-vector-store.sql` | extensions hỗ trợ, `vector_store`, HNSW cosine index |
-| `003-create-vector-ingestion-manifest.sql` | manifest source/version/chunk count |
-| `004-create-vector-collection-metadata.sql` | collection embedding identity |
+| File Migration | Nội dung thực thi | Trạng thái trên `busbooking` |
+|---|---|:---:|
+| `001-enable-pgvector.sql` | `CREATE EXTENSION IF NOT EXISTS vector;` | **Đã áp dụng (v0.8.7)** |
+| `002-create-vector-store.sql` | `vector_store`, HNSW index, extension `hstore`, `uuid-ossp` | **Đã áp dụng** |
+| `003-create-vector-ingestion-manifest.sql` | Bảng `vector_ingestion_manifest` lưu source/version/chunk count | **Đã áp dụng** |
+| `004-create-vector-collection-metadata.sql` | Bảng `vector_collection_metadata` bảo vệ identity mô hình | **Đã áp dụng** |
 
-`vector_store` chứa `id`, `content`, JSON `metadata`, `embedding vector(1536)`. Manifest dùng khóa `(source_type, source_id)`. Identity bảo vệ provider/model/dimensions/configuration version.
+`vector_store` chứa `id`, `content`, JSON `metadata`, `embedding vector(1536)`. Manifest dùng khóa chính `(source_type, source_id)`. Identity bảo vệ provider (`openai`), model (`text-embedding-3-small`), dimensions (`1536`) và configuration version (`v1`).
 
-## Metadata thực tế
+---
 
-Route/Trip có `sourceType`, `sourceId`, `documentVersion`, `routeId`, `departureLocationNormalized`, `arrivalLocationNormalized`. Trip có thêm `tripId`, `vehicleId`; Vehicle có `vehicleId`. Các normalized fields giúp filter đúng chiều.
+## 2. Metadata Thực tế từ Dữ liệu Nghiệp vụ Thật
 
-## Idempotency và re-index
+Khi nạp dữ liệu từ các bảng `routes`, `trips`, `vehicles` trong `busbooking`:
+- `Route`: `sourceType="route"`, `sourceId`, `routeId`, `departureLocationNormalized`, `arrivalLocationNormalized`.
+- `Trip`: `sourceType="trip"`, `tripId`, `routeId`, `departureTime`, `price`.
+- `Vehicle`: `sourceType="vehicle"`, `vehicleId`, `seatCapacity`, `vehicleType`.
 
-Mapper tạo stable UUID từ source type/id/chunk index và SHA-256 document version. Nếu version/chunk count không đổi, ingestion bỏ qua. Nếu thay mapper content, aliases, chunking, model hoặc dimensions, document version/identity có thể thay đổi.
+Metadata filter luôn đảm bảo lọc đúng chiều đi/đến trước khi xét độ tương đồng vector (`cosine distance`).
 
-Quy trình an toàn:
+---
 
-1. Chạy trên `busbooking_openai_it` riêng.
-2. Xác minh collection identity và số vectors trước khi reset.
-3. Reset/re-index chỉ qua controlled acceptance/admin workflow đã phê duyệt.
-4. Xác minh 1536 dimensions, manifest và identity sau ingestion.
+## 3. Idempotency và Cơ chế Bảo vệ Identity (Collection Guard)
 
-Không trộn fake/deterministic vectors với OpenAI vectors: cùng dimensions không có nghĩa cùng vector space. Guard chặn collection có vectors chưa đăng ký hoặc identity không khớp.
-
-```sql
-SELECT vector_dims(embedding), count(*)
-FROM vector_store
-GROUP BY vector_dims(embedding);
-
-SELECT collection_name, embedding_provider, embedding_model,
-       embedding_dimensions, configuration_version
-FROM vector_collection_metadata;
-```
-
+`JdbcVectorCollectionGuard` đảm bảo:
+1. Không cho phép đọc/ghi nếu collection chưa được đăng ký định danh hoặc định danh bị lệch model/dimensions.
+2. Tuyệt đối **không copy fake embeddings** sang database nghiệp vụ chính.
+3. Không thực hiện reset `vector_store` trên database dùng chung khi chưa có kế hoạch re-index được duyệt.
