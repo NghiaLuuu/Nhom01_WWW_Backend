@@ -34,3 +34,7 @@ build/
 
 ### Custom Secrets ###
 src/main/resources/application.yml
+
+/seed_large_data.py
+/seed_large_data.sql
+/seed_qr_test.sql
