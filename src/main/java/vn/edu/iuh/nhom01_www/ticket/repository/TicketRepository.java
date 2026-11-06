@@ -28,6 +28,12 @@ public interface TicketRepository extends JpaRepository<Ticket, Long> {
            "AND t.status IN ('ISSUED', 'RESERVED', 'USED')")
     List<Long> findBookedSeatIdsByTripId(@Param("tripId") Long tripId);
 
+    @Query("SELECT b.trip.id, COUNT(DISTINCT t.seat.id) FROM Ticket t JOIN t.booking b " +
+           "WHERE b.trip.id IN :tripIds " +
+           "AND t.status IN ('ISSUED', 'RESERVED', 'USED') " +
+           "GROUP BY b.trip.id")
+    List<Object[]> countBookedSeatsByTripIds(@Param("tripIds") List<Long> tripIds);
+
     @Query("SELECT t FROM Ticket t WHERE t.seat.id IN :seatIds AND t.booking.trip.id = :tripId " +
            "AND t.status IN ('ISSUED', 'RESERVED', 'USED')")
     List<Ticket> findBookedTicketsByTripIdAndSeatIds(@Param("tripId") Long tripId,

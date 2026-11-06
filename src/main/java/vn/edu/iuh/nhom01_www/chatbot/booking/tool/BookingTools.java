@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.http.HttpStatus;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 import vn.edu.iuh.nhom01_www.aivector.VectorSearchRequest;
 import vn.edu.iuh.nhom01_www.aivector.VectorSearchResult;
@@ -792,7 +793,13 @@ public class BookingTools {
         String depNorm = locationNormalizer.normalize(dep);
         String arrNorm = locationNormalizer.normalize(arr);
 
-        List<Trip> allTrips = tripRepository.findAll();
+        List<Trip> allTrips = Collections.emptyList();
+        try {
+            allTrips = tripRepository.findUpcomingTrips(java.time.LocalDateTime.now().minusMinutes(15), PageRequest.of(0, 200));
+        } catch (Exception ignored) {}
+        if (allTrips == null || allTrips.isEmpty()) {
+            allTrips = tripRepository.findAll();
+        }
         List<Trip> matched = new ArrayList<>();
 
         LocalDate targetDate = null;

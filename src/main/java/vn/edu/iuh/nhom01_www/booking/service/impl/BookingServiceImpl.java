@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vn.edu.iuh.nhom01_www.booking.dto.CounterSaleRequest;
@@ -264,6 +265,12 @@ public class BookingServiceImpl implements BookingService {
 
     @Override
     public List<Booking> getAllBookings() {
+        try {
+            List<Booking> list = bookingRepository.findAllRecent(PageRequest.of(0, 200));
+            if (list != null && !list.isEmpty()) {
+                return list;
+            }
+        } catch (Exception ignored) {}
         return bookingRepository.findAll();
     }
 
@@ -298,6 +305,12 @@ public class BookingServiceImpl implements BookingService {
         if (customerId != null) {
             return bookingRepository.findByCustomer_IdOrderByCreatedAtDesc(customerId);
         }
+        try {
+            List<Booking> list = bookingRepository.findAllRecent(PageRequest.of(0, 100));
+            if (list != null && !list.isEmpty()) {
+                return list;
+            }
+        } catch (Exception ignored) {}
         return bookingRepository.findAll();
     }
 

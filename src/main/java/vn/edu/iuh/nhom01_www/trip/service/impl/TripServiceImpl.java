@@ -55,7 +55,7 @@ public class TripServiceImpl implements TripService {
         if (trips.isEmpty()) {
             trips = tripRepository.findAllRecentWithDetails(pageable);
         }
-        trips.forEach(this::populateAvailableSeats);
+        tripBookingAvailabilityService.populateAvailabilityBatch(trips);
         return trips;
     }
 
@@ -75,33 +75,33 @@ public class TripServiceImpl implements TripService {
                     LocalDateTime end = parsedDate.atTime(LocalTime.MAX);
                     List<Trip> trips = tripRepository.searchByRouteAndDate(dep, arr, start, end, pageable);
                     if (!trips.isEmpty()) {
-                        trips.forEach(this::populateAvailableSeats);
+                        tripBookingAvailabilityService.populateAvailabilityBatch(trips);
                         return trips;
                     }
                 } catch (Exception ignored) {}
             }
             List<Trip> trips = tripRepository.searchByRoute(dep, arr, nowMinus15, pageable);
-            trips.forEach(this::populateAvailableSeats);
+            tripBookingAvailabilityService.populateAvailabilityBatch(trips);
             return trips;
         }
 
         // Case 2: Only departure provided
         if (dep != null) {
             List<Trip> trips = tripRepository.searchByDeparture(dep, nowMinus15, pageable);
-            trips.forEach(this::populateAvailableSeats);
+            tripBookingAvailabilityService.populateAvailabilityBatch(trips);
             return trips;
         }
 
         // Case 3: Only arrival provided
         if (arr != null) {
             List<Trip> trips = tripRepository.searchByArrival(arr, nowMinus15, pageable);
-            trips.forEach(this::populateAvailableSeats);
+            tripBookingAvailabilityService.populateAvailabilityBatch(trips);
             return trips;
         }
 
         // Case 4: No filters provided (Search page default view: show upcoming trips)
         List<Trip> trips = tripRepository.findUpcomingTrips(nowMinus15, pageable);
-        trips.forEach(this::populateAvailableSeats);
+        tripBookingAvailabilityService.populateAvailabilityBatch(trips);
         return trips;
     }
 

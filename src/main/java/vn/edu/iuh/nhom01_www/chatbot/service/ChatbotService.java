@@ -6,6 +6,7 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import vn.edu.iuh.nhom01_www.aivector.VectorIngestionReport;
 import vn.edu.iuh.nhom01_www.aivector.VectorIngestionService;
@@ -450,11 +451,16 @@ public class ChatbotService {
                 || lower.contains("sapa") || lower.contains("đà lạt") || lower.contains("hà nội");
 
         if (needsEnrichment) {
-            List<Trip> allTrips = tripRepository.findAll();
-            List<Trip> futureTrips = allTrips.stream()
-                    .filter(t -> t.getDepartureTime() != null && t.getDepartureTime().isAfter(now))
-                    .filter(t -> !"CANCELLED".equalsIgnoreCase(t.getStatus()))
-                    .collect(Collectors.toList());
+            List<Trip> futureTrips = Collections.emptyList();
+            try {
+                futureTrips = new ArrayList<>(tripRepository.findUpcomingTrips(now, PageRequest.of(0, 50)));
+            } catch (Exception ignored) {}
+            if (futureTrips.isEmpty()) {
+                futureTrips = tripRepository.findAll().stream()
+                        .filter(t -> t.getDepartureTime() != null && t.getDepartureTime().isAfter(now))
+                        .filter(t -> !"CANCELLED".equalsIgnoreCase(t.getStatus()))
+                        .collect(Collectors.toList());
+            }
 
             if (!futureTrips.isEmpty()) {
                 futureTrips.sort((t1, t2) -> {
@@ -622,11 +628,20 @@ public class ChatbotService {
 
         List<Trip> trips = Collections.emptyList();
         try {
-            trips = tripRepository.findAll().stream()
-                    .filter(t -> t.getDepartureTime() != null && t.getDepartureTime().isAfter(now))
-                    .filter(t -> !"CANCELLED".equalsIgnoreCase(t.getStatus()))
-                    .collect(Collectors.toList());
+            if (detectedDestination != null) {
+                trips = tripRepository.searchByArrival(detectedDestination, now, PageRequest.of(0, 50));
+            } else {
+                trips = tripRepository.findUpcomingTrips(now, PageRequest.of(0, 50));
+            }
         } catch (Exception ignored) {}
+        if (trips == null || trips.isEmpty()) {
+            try {
+                trips = tripRepository.findAll().stream()
+                        .filter(t -> t.getDepartureTime() != null && t.getDepartureTime().isAfter(now))
+                        .filter(t -> !"CANCELLED".equalsIgnoreCase(t.getStatus()))
+                        .collect(Collectors.toList());
+            } catch (Exception ignored) {}
+        }
 
         List<Trip> matchingTrips = new ArrayList<>();
         if (detectedDestination != null) {
@@ -991,23 +1006,36 @@ public class ChatbotService {
         }
 
         // Query database trips directly (e.g. for "Các chuyến xe khởi hành vào ngày mai" without route)
-        List<Trip> trips;
+        List<Trip> trips = Collections.emptyList();
         if (targetDate != null) {
             LocalDateTime start = targetDate.atStartOfDay();
             LocalDateTime end = targetDate.atTime(LocalTime.MAX);
-            trips = tripRepository.findAll().stream()
-                    .filter(t -> t.getDepartureTime() != null
-                            && !t.getDepartureTime().isBefore(start)
-                            && !t.getDepartureTime().isAfter(end)
-                            && !"CANCELLED".equalsIgnoreCase(t.getStatus()))
-                    .sorted(Comparator.comparing(Trip::getDepartureTime))
-                    .toList();
+            try {
+                trips = tripRepository.searchByRouteAndDate("", "", start, end, PageRequest.of(0, 30));
+                if (trips.isEmpty()) {
+                    trips = tripRepository.findUpcomingTrips(start, PageRequest.of(0, 30));
+                }
+            } catch (Exception ignored) {}
+            if (trips == null || trips.isEmpty()) {
+                trips = tripRepository.findAll().stream()
+                        .filter(t -> t.getDepartureTime() != null
+                                && !t.getDepartureTime().isBefore(start)
+                                && !t.getDepartureTime().isAfter(end)
+                                && !"CANCELLED".equalsIgnoreCase(t.getStatus()))
+                        .sorted(Comparator.comparing(Trip::getDepartureTime))
+                        .toList();
+            }
         } else {
-            trips = tripRepository.findAll().stream()
-                    .filter(t -> t.getDepartureTime() != null && t.getDepartureTime().isAfter(now)
-                            && !"CANCELLED".equalsIgnoreCase(t.getStatus()))
-                    .sorted(Comparator.comparing(Trip::getDepartureTime))
-                    .toList();
+            try {
+                trips = tripRepository.findUpcomingTrips(now, PageRequest.of(0, 30));
+            } catch (Exception ignored) {}
+            if (trips == null || trips.isEmpty()) {
+                trips = tripRepository.findAll().stream()
+                        .filter(t -> t.getDepartureTime() != null && t.getDepartureTime().isAfter(now)
+                                && !"CANCELLED".equalsIgnoreCase(t.getStatus()))
+                        .sorted(Comparator.comparing(Trip::getDepartureTime))
+                        .toList();
+            }
         }
 
         if (trips.isEmpty()) {
