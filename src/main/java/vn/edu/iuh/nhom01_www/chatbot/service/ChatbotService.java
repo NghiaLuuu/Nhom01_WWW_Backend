@@ -265,6 +265,9 @@ public class ChatbotService {
         String finalAnswer;
         try {
             finalAnswer = chatModel.call(nlgPrompt);
+            if (finalAnswer != null && Pattern.compile("(?i)\\[\\[BOOK_TRIP_ID\\s*:").matcher(finalAnswer).find()) {
+                finalAnswer = "Dạ để tra cứu chuyến chính xác, anh/chị vui lòng cho em biết điểm đi, điểm đến và ngày khởi hành mong muốn nhé!";
+            }
         } catch (Exception e) {
             log.warn("Failed to generate answer from ChatModel, activating Domain Knowledge Fallback: {}", e.getMessage());
             finalAnswer = buildDomainFallbackAnswer(userQuestion, ragContext);
@@ -539,7 +542,7 @@ public class ChatbotService {
                 "   - Nếu KHÔNG có chuyến nào vào đúng ngày " + tomorrowStr + ", hãy thông báo rõ ràng, lịch sự và chỉ gợi ý các chuyến TRONG TƯƠNG LAI gần nhất (sau ngày " + todayStr + "). TUYỆT ĐỐI KHÔNG lấy các chuyến xe trong quá khứ!\n" +
                 "3. Luôn chào hỏi và xưng hô lịch sự là 'em' và gọi khách là 'anh/chị' hoặc 'quý khách' (tuyệt đối không xưng 'tôi', không gọi khách là 'ANONYMOUS').\n" +
                 "4. Định dạng Markdown đẹp mắt với bullet points.\n" +
-                "5. Luôn kèm thẻ [[BOOK_TRIP_ID:<id>]] cho các chuyến xe được nhắc đến để giao diện hiển thị nút Đặt vé nhanh cho khách.\n\n" +
+                "5. Không tạo thẻ đặt chuyến hoặc tự suy đoán mã chuyến; hãy hướng dẫn khách cung cấp thông tin để tra cứu.\n\n" +
                 "[LỊCH SỬ HỘI THOẠI]:\n" + (historyContext.isBlank() ? "Chưa có lịch sử." : historyContext) + "\n\n" +
                 "[DỮ LIỆU CHUYẾN XE TRA CỨU ĐƯỢC TỪ HỆ THỐNG (TẤT CẢ ĐỀU TRONG TƯƠNG LAI)]:\n" + ragContext + "\n\n" +
                 "[CÂU HỎI CỦA KHÁCH HÀNG]:\n" + userQuestion + "\n\n" +
@@ -598,7 +601,7 @@ public class ChatbotService {
             return "Dạ về **Chính sách Đổi trả & Hoàn tiền của VEXE**:\n\n" +
                     "- 🛡️ **Cam kết bảo vệ 100%**: Hoàn tiền **150%** nếu nhà xe tự ý hủy chuyến hoặc không có xe.\n" +
                     "- 🎫 **Hủy vé linh hoạt**: Quý khách có thể yêu cầu hủy vé trực tiếp trong trang **Hồ sơ cá nhân > Vé của tôi**.\n" +
-                    "- ⏰ **Thời gian**: Vui lòng yêu cầu hủy trước giờ khởi hành tối thiểu 4 tiếng để được xử lý hoàn tiền nhanh nhất qua tài khoản ngân hàng ạ.";
+                    "- ⏰ **Chính sách hủy**: Trước giờ khởi hành hơn 2 giờ, phí hủy là 20% và hoàn 80%; trong vòng 2 giờ trước giờ chạy, vé không được hoàn tiền.";
         }
 
         // 8. General Price question
@@ -964,7 +967,7 @@ public class ChatbotService {
         }
 
         // If specific route info was provided (e.g. "Xe Sài Gòn đi Đà Lạt")
-        if (bookingAssistantService.isPresent() && (dep != null || arr != null)) {
+        if (bookingAssistantService.isPresent()) {
             String dateStr = targetDate != null ? targetDate.toString() : null;
             List<TripSearchResultDto> searchDtos = bookingAssistantService.get().getBookingTools().searchAvailableTrips(
                     dep, arr, dateStr, null, null, 1
@@ -974,7 +977,7 @@ public class ChatbotService {
                 StringBuilder sb = new StringBuilder();
                 String routeTitle = (dep != null && arr != null)
                         ? "**" + dep + "** ➔ **" + arr + "**"
-                        : (arr != null ? "đến **" + arr + "**" : "từ **" + dep + "**");
+                        : (arr != null ? "đến **" + arr + "**" : dep != null ? "từ **" + dep + "**" : "SẮP KHỞI HÀNH");
                 String dateTitle = targetDate != null ? " vào ngày **" + targetDate.format(DateTimeFormatter.ofPattern("dd/MM/yyyy")) + "**" : "";
 
                 sb.append(String.format("🚌 **DANH SÁCH CHUYẾN XE %s%s:**\n\n", routeTitle, dateTitle));
@@ -996,10 +999,12 @@ public class ChatbotService {
                 res.put("cardType", "TRIP_LIST");
                 res.put("trips", searchDtos);
                 return res;
-            } else if (dep != null && arr != null) {
+            } else {
                 String dateTitle = targetDate != null ? " vào ngày **" + targetDate.format(DateTimeFormatter.ofPattern("dd/MM/yyyy")) + "**" : "";
+                String routeTitle = (dep != null ? " từ **" + dep + "**" : "")
+                        + (arr != null ? " đến **" + arr + "**" : "");
                 return Map.of(
-                        "answer", "Dạ hiện tại hệ thống VEXE chưa có chuyến xe nào từ **" + dep + "** đến **" + arr + "**" + dateTitle + " còn chỗ trống mở bán ạ. Anh/chị có thể kiểm tra ngày khác hoặc xem các chuyến lân cận nhé!",
+                        "answer", "Dạ hiện tại hệ thống VEXE chưa tìm thấy chuyến xe nào" + routeTitle + dateTitle + " còn chỗ trống ạ. Anh/chị có thể kiểm tra ngày khác hoặc tuyến lân cận nhé!",
                         "status", "NO_TRIPS_FOUND"
                 );
             }

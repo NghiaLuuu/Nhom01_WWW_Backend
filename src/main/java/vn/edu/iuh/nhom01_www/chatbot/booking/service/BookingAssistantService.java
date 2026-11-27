@@ -102,13 +102,21 @@ public class BookingAssistantService {
         }
 
         // Step 0: Parse intent & check prompt injection firewall
-        BookingIntent intent = intentParser.parse(question, request.getHistory());
+        BookingIntent currentTurn = intentParser.parse(question, Collections.emptyList());
+        boolean newBookingRequest = (currentTurn.getDepartureLocation() != null || currentTurn.getArrivalLocation() != null)
+                && question.matches("(?isu).*\\b(?:đặt|dat|mua)\\s+(?:(?:giúp|cho|hộ|tôi|em|mình)\\s+)*(?:\\d+\\s+)?(?:vé|ve|chỗ|ghế|xe|chuyến|đi|di|đến|den|về)\\b.*");
+        BookingIntent intent = newBookingRequest ? currentTurn : intentParser.parse(question, request.getHistory());
         if (intent.isPromptInjection()) {
             log.warn("[Security] Prompt injection intercepted for user '{}': {}", currentUserEmail, question);
             return Map.of(
                     "answer", "🛡️ [CẢNH BÁO BẢO MẬT]: " + intent.getPromptInjectionReason() + " Hệ thống bắt buộc phải có bước tóm tắt và xác nhận trực tiếp từ người dùng trước khi tạo đơn đặt vé.",
                     "status", "SECURITY_REJECTED"
             );
+        }
+
+        if (newBookingRequest) {
+            bookingSessionManager.clearSession(sessionKey);
+            session = bookingSessionManager.getOrCreateSession(sessionKey);
         }
 
         // Step 1: Check if user is REJECTING / CANCELLING in multi-turn
@@ -159,9 +167,10 @@ public class BookingAssistantService {
         }
 
         // Step 8: Try Spring AI ChatClient with Tool Calling (if query is complex/conversational)
-        boolean hasSpecificBookingDirectives = intent.hasRouteInfo() || intent.getTargetTripId() != null || intent.getTargetTripTime() != null;
+        boolean hasSpecificBookingDirectives = intent.hasRouteInfo() || intent.getArrivalLocation() != null
+                || intent.getDepartureLocation() != null || intent.getTargetTripId() != null || intent.getTargetTripTime() != null;
         if (!hasSpecificBookingDirectives) {
-            String historyContext = buildHistoryContext(request.getHistory());
+            String historyContext = newBookingRequest ? "" : buildHistoryContext(request.getHistory());
             String systemPrompt = buildSystemPrompt(currentCustomer);
             String userPrompt = (historyContext.isBlank() ? "" : "Lịch sử hội thoại:\n" + historyContext + "\n\n") +
                     "Người dùng: " + question;
@@ -175,7 +184,8 @@ public class BookingAssistantService {
                         .call()
                         .content();
 
-                if (response != null && !response.isBlank()) {
+                if (response != null && !response.isBlank()
+                        && !java.util.regex.Pattern.compile("(?i)\\[\\[BOOK_TRIP_ID\\s*:").matcher(response).find()) {
                     Map<String, Object> result = new LinkedHashMap<>();
                     result.put("answer", response);
                     result.put("assistantMode", "TOOL_CALLING");
@@ -827,9 +837,13 @@ public class BookingAssistantService {
                 session.setStep(BookingStep.DEPARTURE_SELECTION);
                 bookingSessionManager.saveSession(session);
 
-                String dateDisplay = session.getDepartureDate() != null ? " ngày **" + session.getDepartureDate().format(DATE_FORMATTER) + "**" : " ngày mai";
+                String dateDisplay = session.getDepartureDate() != null ? " ngày **" + session.getDepartureDate().format(DATE_FORMATTER) + "**" : " các ngày sắp tới";
                 StringBuilder sb = new StringBuilder();
                 sb.append(String.format("🚌 **DANH SÁCH ĐIỂM KHỞI HÀNH ĐẾN %s** (%s - %d vé):\n\n", arr.toUpperCase(), dateDisplay.trim(), count));
+                int totalTrips = departureOptions.stream().mapToInt(DepartureOptionDto::getActiveTripCount).sum();
+                if (totalTrips == 1) {
+                    sb.append("Dạ hiện chỉ có **1 chuyến xe** phù hợp. Anh/chị vui lòng xem điểm khởi hành bên dưới trước khi chọn nhé.\n\n");
+                }
                 sb.append("Em đã lọc các điểm đi có chuyến xe đang hoạt động thực tế, chưa khởi hành và còn đủ chỗ trống cho anh/chị:\n\n");
 
                 for (int i = 0; i < departureOptions.size(); i++) {
@@ -847,7 +861,7 @@ public class BookingAssistantService {
                 res.put("cardType", "DEPARTURE_SELECTION");
                 res.put("destination", arr);
                 res.put("passengerCount", count);
-                res.put("departureDate", session.getDepartureDate() != null ? session.getDepartureDate().toString() : LocalDate.now().plusDays(1).toString());
+                res.put("departureDate", session.getDepartureDate() != null ? session.getDepartureDate().toString() : null);
                 res.put("departureOptions", departureOptions);
                 res.put("stateVersion", session.getStateVersion());
                 res.put("workflowStep", session.getWorkflowStep());

@@ -108,7 +108,8 @@ public class CancellationAssistantService {
                     || question.toLowerCase(Locale.ROOT).contains("trả")
                     || question.toLowerCase(Locale.ROOT).contains("hiệu lực");
             if (isExplicitCancelQuery) {
-                return handleFindMyBookings(currentCustomer, intent);
+                boolean cancellationRequest = question.toLowerCase(Locale.ROOT).matches("(?s).*(hủy|huy|trả\\s+vé|tra\\s+ve).*");
+                return handleFindMyBookings(currentCustomer, intent, cancellationRequest);
             }
             return handleViewMyBookings(currentCustomer);
         }
@@ -131,6 +132,10 @@ public class CancellationAssistantService {
         // Step 3: User selected a specific booking or preview command
         if (intent.getTargetBookingId() != null) {
             return handleBookingSelected(currentCustomer, intent);
+        }
+
+        if (question.toLowerCase(Locale.ROOT).matches("(?s).*(hủy|huy|trả\\s+vé|tra\\s+ve).*")) {
+            return executeDeterministicCancellationWorkflow(intent, currentCustomer);
         }
 
         // Step 4: Try Spring AI Tool Calling
@@ -226,7 +231,7 @@ public class CancellationAssistantService {
         }
     }
 
-    private Map<String, Object> handleFindMyBookings(Customer customer, CancellationIntent intent) {
+    private Map<String, Object> handleFindMyBookings(Customer customer, CancellationIntent intent, boolean cancellationRequest) {
         String keyword = null;
         if (intent.getTargetBookingCode() != null && !intent.getTargetBookingCode().isBlank()) {
             keyword = intent.getTargetBookingCode();
@@ -240,6 +245,9 @@ public class CancellationAssistantService {
                 intent.getDateKeyword(),
                 keyword
         );
+        if (cancellationRequest) {
+            myBookings = myBookings.stream().filter(MyBookingSummaryDto::isCancellable).toList();
+        }
 
         if (myBookings.isEmpty()) {
             StringBuilder filterDesc = new StringBuilder();
@@ -258,7 +266,7 @@ public class CancellationAssistantService {
             }
 
             return Map.of(
-                    "answer", "Dạ em đã kiểm tra tài khoản của anh/chị (" + customer.getFullName() + ") nhưng hiện tại không tìm thấy vé xe nào" + filterDesc + " đang có hiệu lực ạ. Anh/chị có thể vào trang **Vé của tôi** để xem toàn bộ lịch sử đặt vé nhé! 🎫",
+                    "answer", "Dạ em đã kiểm tra tài khoản của anh/chị (" + customer.getFullName() + ") nhưng hiện tại không tìm thấy vé xe nào" + filterDesc + (cancellationRequest ? " đủ điều kiện hủy" : " đang có hiệu lực") + " ạ. Anh/chị có thể vào trang **Vé của tôi** để xem toàn bộ lịch sử đặt vé nhé! 🎫",
                     "status", "NO_BOOKINGS_FOUND"
             );
         }
@@ -433,13 +441,20 @@ public class CancellationAssistantService {
     }
 
     private Map<String, Object> executeDeterministicCancellationWorkflow(CancellationIntent intent, Customer customer) {
-        List<MyBookingSummaryDto> myBookings = cancellationTools.findMyBookingsFiltered(
+        List<MyBookingSummaryDto> matchedBookings = cancellationTools.findMyBookingsFiltered(
                 intent.getDepartureKeyword(),
                 intent.getDestinationKeyword(),
                 intent.getDateKeyword(),
                 null
         );
+        List<MyBookingSummaryDto> myBookings = matchedBookings.stream().filter(MyBookingSummaryDto::isCancellable).toList();
         if (myBookings.isEmpty()) {
+            if (!matchedBookings.isEmpty()) {
+                return Map.of("answer", "Dạ có đơn vé phù hợp nhưng hiện không đủ điều kiện hủy trực tuyến: "
+                                + matchedBookings.stream().map(MyBookingSummaryDto::getNonCancellableReason)
+                                .filter(Objects::nonNull).distinct().collect(Collectors.joining("; ")) + ".",
+                        "status", "NO_BOOKINGS_FOUND");
+            }
             StringBuilder filterDesc = new StringBuilder();
             if (intent.getDepartureKeyword() != null && intent.getDestinationKeyword() != null) {
                 filterDesc.append(" từ **").append(intent.getDepartureKeyword()).append("** đến **").append(intent.getDestinationKeyword()).append("**");
@@ -454,14 +469,14 @@ public class CancellationAssistantService {
 
             if (intent.getDestinationKeyword() != null && intent.getDepartureKeyword() == null) {
                 return Map.of(
-                        "answer", "Dạ em không tìm thấy vé đến **" + intent.getDestinationKeyword() + "** trong danh sách vé của anh/chị ạ.",
+                        "answer", "Dạ em không tìm thấy vé đến **" + intent.getDestinationKeyword() + "** đủ điều kiện hủy trong danh sách vé của anh/chị ạ.",
                         "status", "NO_BOOKINGS_FOUND"
                 );
             }
 
             return Map.of(
                     "answer", "Dạ em đã kiểm tra tài khoản của anh/chị nhưng không tìm thấy đơn đặt vé nào" +
-                            (filterDesc.length() > 0 ? filterDesc.toString() : "") + " đang có hiệu lực. Anh/chị có muốn kiểm tra lại danh sách vé đã mua không ạ?",
+                            (filterDesc.length() > 0 ? filterDesc.toString() : "") + " đủ điều kiện hủy. Anh/chị có muốn kiểm tra lại danh sách vé đã mua không ạ?",
                     "status", "NO_BOOKINGS_FOUND"
             );
         }

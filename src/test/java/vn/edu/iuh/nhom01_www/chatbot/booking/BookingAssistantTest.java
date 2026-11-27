@@ -158,6 +158,73 @@ class BookingAssistantTest {
     }
 
     @Test
+    void parsesAbbreviatedDestinationJoinedToDateWithoutInventingOrigin() {
+        BookingIntent intent = intentParser.parse("đặt đi sgngày 30/11", List.of());
+        assertThat(intent.getDepartureLocation()).isNull();
+        assertThat(intent.getArrivalLocation()).isEqualToIgnoringCase("sg");
+        assertThat(intent.getDepartureDate()).isEqualTo(LocalDate.of(LocalDate.now().getYear(), 11, 30));
+        assertThat(new vn.edu.iuh.nhom01_www.aivector.VietnameseLocationNormalizer().normalize(intent.getArrivalLocation())).isEqualTo("tp hcm");
+    }
+
+    @Test
+    void destinationOnlyBookingReportsWhenOnlyOneTripIsAvailable() {
+        ChatbotRequest request = new ChatbotRequest();
+        request.setQuestion("đặt đi Đà Lạt ngày " + mockTrip.getDepartureTime().format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")));
+        Map<String, Object> response = assistantService.assistBooking(request, "nguyenvana@gmail.com");
+        assertThat(response).containsEntry("status", "DEPARTURE_SELECTION_REQUIRED");
+        assertThat((String) response.get("answer")).contains("chỉ có **1 chuyến xe**", "TP. Hồ Chí Minh");
+    }
+
+    @Test
+    void destinationOmitsTrailingPoliteRequest() {
+        assertThat(intentParser.parse("đặt vé xe đi sapa giúp tôi", List.of()).getArrivalLocation()).isEqualTo("sapa");
+        assertThat(intentParser.parse("đặt 3 vé đi Đà Lạt giúp tôi", List.of()).getArrivalLocation()).isEqualTo("Đà Lạt");
+    }
+
+    @Test
+    void destinationSearchAndBookingAgreeOnOpenTripsForThreePassengers() {
+        assertThat(bookingTools.searchAvailableTrips(null, "Đà Lạt", null, null, null, 3))
+                .extracting(TripSearchResultDto::getTripId).contains(1001L);
+        assertThat(bookingTools.listAvailableDepartureLocations("Đà Lạt", null, 3))
+                .extracting(DepartureOptionDto::getDepartureLocation).contains("TP. Hồ Chí Minh");
+
+        when(tripBookingAvailabilityService.isWebBookingOpen(mockTrip)).thenReturn(false);
+        assertThat(bookingTools.searchAvailableTrips(null, "Đà Lạt", null, null, null, 3)).isEmpty();
+        assertThat(bookingTools.listAvailableDepartureLocations("Đà Lạt", null, 3)).isEmpty();
+    }
+
+    @Test
+    void newBookingWithoutQuantityDoesNotReusePreviousCount() {
+        ChatbotRequest previous = new ChatbotRequest();
+        previous.setSessionId("new-booking-count");
+        previous.setQuestion("Đặt giúp tôi 2 vé đi Đà Lạt");
+        assistantService.assistBooking(previous, "nguyenvana@gmail.com");
+
+        ChatbotRequest next = new ChatbotRequest();
+        next.setSessionId("new-booking-count");
+        next.setQuestion("đặt giúp tôi vé đi đà lạt");
+        next.setHistory(List.of(new ChatbotRequest.ChatMessage("user", "Đặt giúp tôi 2 vé đi Đà Lạt")));
+        Map<String, Object> result = assistantService.assistBooking(next, "nguyenvana@gmail.com");
+
+        assertThat(result).containsEntry("passengerCount", 1);
+    }
+
+    @Test
+    void bookingQuantityContinuesPreviouslyDiscussedRouteAndDate() {
+        ChatbotRequest request = new ChatbotRequest();
+        request.setQuestion("đặt 1 vé");
+        request.setHistory(List.of(
+                new ChatbotRequest.ChatMessage("user", "đi từ SG đến đà lạt"),
+                new ChatbotRequest.ChatMessage("user", "đặt trong ngày mai"),
+                new ChatbotRequest.ChatMessage("assistant", "Em tìm thấy một chuyến lúc 21:00.")
+        ));
+
+        assertThat(assistantService.assistBooking(request, mockCustomer.getEmail()))
+                .containsEntry("status", "TRIP_SELECTION")
+                .containsEntry("passengerCount", 1);
+    }
+
+    @Test
     @DisplayName("Scenario 1: Đặt một vé thành công qua xác nhận 2 bước")
     void testScenario1_SingleTicketBookingSuccess() {
         // Step 1: User asks to book 1 ticket

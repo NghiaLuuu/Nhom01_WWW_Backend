@@ -11,6 +11,8 @@ import java.math.RoundingMode;
 import java.text.NumberFormat;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.Clock;
+import java.time.ZoneId;
 import java.util.*;
 
 @Slf4j
@@ -18,6 +20,10 @@ import java.util.*;
 public class CancellationPolicyService {
 
     private static final NumberFormat CURRENCY_FORMATTER = NumberFormat.getInstance(new Locale("vi", "VN"));
+    private final Clock clock;
+
+    public CancellationPolicyService() { this(Clock.system(ZoneId.of("Asia/Ho_Chi_Minh"))); }
+    public CancellationPolicyService(Clock clock) { this.clock = clock; }
 
     public CancellationEligibilityDto evaluateEligibility(Booking booking, List<Long> requestedTicketIds) {
         if (booking == null) {
@@ -39,6 +45,10 @@ public class CancellationPolicyService {
         // Check if booking is PENDING_PAYMENT
         if ("PENDING_PAYMENT".equalsIgnoreCase(booking.getStatus())) {
             List<Ticket> activeTickets = getActiveTickets(booking, requestedTicketIds);
+            if (activeTickets.isEmpty() || activeTickets.stream().anyMatch(t -> "USED".equalsIgnoreCase(t.getStatus()))) {
+                return CancellationEligibilityDto.builder().eligible(false).bookingId(booking.getId())
+                        .bookingCode(booking.getBookingCode()).reason("Không có vé hợp lệ nào có thể hủy trong đơn này.").build();
+            }
             List<Long> cancellableIds = activeTickets.stream().map(Ticket::getId).toList();
             List<String> cancellableSeats = activeTickets.stream()
                     .map(t -> t.getSeat() != null ? t.getSeat().getSeatName() : "N/A")
@@ -80,10 +90,10 @@ public class CancellationPolicyService {
                     .build();
         }
 
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(clock);
         LocalDateTime departureTime = booking.getTrip().getDepartureTime();
 
-        if (now.isAfter(departureTime)) {
+        if (!now.isBefore(departureTime)) {
             return CancellationEligibilityDto.builder()
                     .eligible(false)
                     .bookingId(booking.getId())
@@ -92,16 +102,8 @@ public class CancellationPolicyService {
                     .build();
         }
 
-        double hoursUntilDeparture = Duration.between(now, departureTime).toMinutes() / 60.0;
-        if (hoursUntilDeparture < 2.0) {
-            return CancellationEligibilityDto.builder()
-                    .eligible(false)
-                    .bookingId(booking.getId())
-                    .bookingCode(booking.getBookingCode())
-                    .hoursUntilDeparture(hoursUntilDeparture)
-                    .reason("Đã quá thời hạn hủy vé trực tuyến (phải trước giờ khởi hành tối thiểu 2 giờ).")
-                    .build();
-        }
+        Duration remaining = Duration.between(now, departureTime);
+        double hoursUntilDeparture = remaining.toMillis() / 3600000.0;
 
         // Check ticket status
         List<Ticket> activeTickets = getActiveTickets(booking, requestedTicketIds);
@@ -126,18 +128,10 @@ public class CancellationPolicyService {
         }
 
         // Calculate fee percent based on time before departure
-        int feePercent;
-        String policyDescription;
-        if (hoursUntilDeparture >= 24.0) {
-            feePercent = 10;
-            policyDescription = "Hủy trước 24 giờ so với giờ khởi hành: Phí hủy 10%, hoàn tiền 90%.";
-        } else if (hoursUntilDeparture >= 12.0) {
-            feePercent = 20;
-            policyDescription = "Hủy từ 12 đến dưới 24 giờ trước khởi hành: Phí hủy 20%, hoàn tiền 80%.";
-        } else {
-            feePercent = 50;
-            policyDescription = "Hủy từ 2 đến dưới 12 giờ trước khởi hành: Phí hủy 50%, hoàn tiền 50%.";
-        }
+        int feePercent = remaining.compareTo(Duration.ofHours(2)) > 0 ? 20 : 100;
+        String policyDescription = feePercent == 20
+                ? "Hủy trước giờ khởi hành hơn 2 giờ: Phí hủy 20%, hoàn tiền 80%."
+                : "Hủy trong vòng 2 giờ trước giờ khởi hành: Không hoàn tiền.";
 
         BigDecimal originalAmount = activeTickets.stream()
                 .map(Ticket::getPrice)
@@ -175,6 +169,10 @@ public class CancellationPolicyService {
         if (booking.getTickets() == null) return Collections.emptyList();
         return booking.getTickets().stream()
                 .filter(t -> !"CANCELLED".equalsIgnoreCase(t.getStatus()))
+                .filter(t -> !"NO_SHOW".equalsIgnoreCase(t.getStatus()) ||
+                        (!"PENDING_PAYMENT".equalsIgnoreCase(booking.getStatus()) && booking.getTrip() != null
+                                && booking.getTrip().getDepartureTime() != null
+                                && LocalDateTime.now(clock).isBefore(booking.getTrip().getDepartureTime())))
                 .filter(t -> requestedTicketIds == null || requestedTicketIds.isEmpty() || requestedTicketIds.contains(t.getId()))
                 .toList();
     }

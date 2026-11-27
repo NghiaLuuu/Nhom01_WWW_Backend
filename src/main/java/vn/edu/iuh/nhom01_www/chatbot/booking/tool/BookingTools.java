@@ -106,7 +106,7 @@ public class BookingTools {
     @Tool(name = "listAvailableDepartureLocations", description = "Truy vấn danh sách các điểm khởi hành thực tế có chuyến xe đi đến điểm đến mong muốn vào ngày đã chọn và còn đủ chỗ trống.")
     public List<DepartureOptionDto> listAvailableDepartureLocations(
             @ToolParam(description = "Điểm đến cần đến (ví dụ: Đà Lạt, Nha Trang, Vũng Tàu)") String destination,
-            @ToolParam(description = "Ngày khởi hành định dạng YYYY-MM-DD (nếu không cung cấp thì mặc định là ngày mai)", required = false) String departureDate,
+            @ToolParam(description = "Ngày khởi hành định dạng YYYY-MM-DD; bỏ trống để tìm các chuyến sắp tới", required = false) String departureDate,
             @ToolParam(description = "Số lượng hành khách / số vé cần đặt (mặc định 1)", required = false) Integer passengerCount) {
 
         if (destination == null || destination.isBlank()) {
@@ -114,20 +114,18 @@ public class BookingTools {
         }
 
         int minSeats = (passengerCount != null && passengerCount > 0) ? passengerCount : 1;
-        LocalDate targetDate;
+        LocalDate targetDate = null;
         if (departureDate != null && !departureDate.isBlank()) {
             try {
                 targetDate = LocalDate.parse(departureDate.trim());
             } catch (Exception e) {
-                targetDate = LocalDate.now().plusDays(1);
+                return Collections.emptyList();
             }
-        } else {
-            targetDate = LocalDate.now().plusDays(1);
         }
 
         // Search trips to destination on targetDate
-        List<Trip> candidates = findCandidateTrips("", destination, targetDate.toString());
-        LocalDateTime now = LocalDateTime.now();
+        List<Trip> candidates = findCandidateTrips("", destination, targetDate != null ? targetDate.toString() : null);
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh"));
 
         // Filter valid trips
         Map<String, List<Trip>> groupedByDeparture = new LinkedHashMap<>();
@@ -183,7 +181,7 @@ public class BookingTools {
             options.add(DepartureOptionDto.builder()
                     .departureLocation(canonicalName)
                     .arrivalLocation(destination)
-                    .departureDate(targetDate.toString())
+                    .departureDate(targetDate != null ? targetDate.toString() : null)
                     .activeTripCount(activeCount)
                     .totalAvailableSeats(totalSeats)
                     .minPrice(minPrice)
@@ -225,7 +223,7 @@ public class BookingTools {
         List<Trip> candidates = findCandidateTrips(departureLocation, arrivalLocation, departureDate);
 
         // Filter and enrich
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh"));
         List<TripSearchResultDto> results = new ArrayList<>();
         int minSeats = (passengerCount != null && passengerCount > 0) ? passengerCount : 1;
 
@@ -243,6 +241,9 @@ public class BookingTools {
             }
 
             boolean webOpen = tripBookingAvailabilityService.isWebBookingOpen(trip);
+            if (!webOpen) {
+                continue;
+            }
 
             // Filter preferred time if specified (e.g. 21:00 or "tối" -> >= 18:00)
             if (preferredTime != null && !preferredTime.isBlank()) {
@@ -793,10 +794,17 @@ public class BookingTools {
         String depNorm = locationNormalizer.normalize(dep);
         String arrNorm = locationNormalizer.normalize(arr);
 
-        List<Trip> allTrips = Collections.emptyList();
-        try {
-            allTrips = tripRepository.findUpcomingTrips(java.time.LocalDateTime.now().minusMinutes(15), PageRequest.of(0, 200));
-        } catch (Exception ignored) {}
+        List<Trip> allTrips = new ArrayList<>();
+        {
+            int page = 0;
+            List<Trip> batch;
+            LocalDateTime cutoff = LocalDateTime.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh")).minusMinutes(15);
+            do {
+                batch = tripRepository.findUpcomingTrips(cutoff, PageRequest.of(page++, 200));
+                if (batch == null) break;
+                allTrips.addAll(batch);
+            } while (batch.size() == 200);
+        }
         if (allTrips == null || allTrips.isEmpty()) {
             allTrips = tripRepository.findAll();
         }

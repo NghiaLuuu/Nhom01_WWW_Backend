@@ -1,6 +1,7 @@
 package vn.edu.iuh.nhom01_www.aivector;
 
 import java.text.Normalizer;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -14,6 +15,7 @@ public final class VietnameseLocationNormalizer {
             "(?iu)\\btừ\\s+(.+?)\\s+(?:đến|đi)\\s+(.+?)(?:[?.!,;:]|$)");
     private static final Map<String, String> ALIASES = Map.ofEntries(
             Map.entry("sai gon", "tp hcm"),
+            Map.entry("sg", "tp hcm"),
             Map.entry("ho chi minh", "tp hcm"),
             Map.entry("thanh pho ho chi minh", "tp hcm"),
             Map.entry("tp ho chi minh", "tp hcm"),
@@ -43,6 +45,10 @@ public final class VietnameseLocationNormalizer {
             Map.entry("tinh gia lai", "pleiku"),
             Map.entry("tp pleiku", "pleiku"));
 
+    private static final List<Map.Entry<String, String>> SORTED_ALIASES = ALIASES.entrySet().stream()
+            .sorted((e1, e2) -> Integer.compare(e2.getKey().length(), e1.getKey().length()))
+            .toList();
+
     public String normalize(String location) {
         if (location == null || location.isBlank()) {
             return "";
@@ -52,7 +58,15 @@ public final class VietnameseLocationNormalizer {
                 .replace('đ', 'd').replace('Đ', 'D')
                 .toLowerCase(Locale.ROOT)
                 .replaceAll("[^a-z0-9]+", " ").trim();
-        return ALIASES.getOrDefault(decomposed, decomposed);
+        if (ALIASES.containsKey(decomposed)) {
+            return ALIASES.get(decomposed);
+        }
+        for (Map.Entry<String, String> entry : SORTED_ALIASES) {
+            if (decomposed.startsWith(entry.getKey() + " ")) {
+                return entry.getValue();
+            }
+        }
+        return decomposed;
     }
 
     public Optional<DirectionalLocation> directionalLocations(String query) {

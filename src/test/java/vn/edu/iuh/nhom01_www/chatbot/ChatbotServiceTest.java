@@ -56,6 +56,20 @@ class ChatbotServiceTest {
     }
 
     @Test
+    void doesNotShowUnverifiedBookingLinkGeneratedByLanguageModel() {
+        ChatbotRequest request = new ChatbotRequest();
+        request.setQuestion("Thông tin chuyến này thế nào?");
+        when(vectorSearchService.search(any(VectorSearchRequest.class))).thenReturn(List.of());
+        when(chatModel.call(any(String.class))).thenReturn("TP.HCM đi Sài Gòn [[BOOK_TRIP_ID:17836]]");
+
+        Map<String, Object> response = chatbotService.ask(request, "user@gmail.com");
+
+        assertThat((String) response.get("answer"))
+                .doesNotContain("17836", "TP.HCM đi Sài Gòn")
+                .contains("điểm đi", "điểm đến");
+    }
+
+    @Test
     @DisplayName("Should respond to greeting without vector search or chatModel")
     void respondsToGreetingWithoutSearchingVectors() {
         ChatbotRequest request = new ChatbotRequest();
@@ -293,5 +307,43 @@ class ChatbotServiceTest {
         Map<String, Object> result = chatbotService.ask(request, "khach@gmail.com");
 
         assertThat((String) result.get("answer")).contains("chuyến xe sắp khởi hành", "Chuyến #202", "[[BOOK_TRIP_ID:202]]");
+    }
+    @Test
+    @DisplayName("Should prioritize tomorrow morning trip over past trips and filter past trips from prompt")
+    void shouldPrioritizeTomorrowMorningTripOverPastTrips() {
+        ChatbotRequest request = new ChatbotRequest();
+        request.setQuestion("Tìm chuyến xe từ Hà Nội đi Sapa sáng mai");
+
+        Route route = Route.builder().id(15L).departureLocation("Hà Nội").arrivalLocation("Sapa").build();
+        Vehicle vehicle = Vehicle.builder().id(3L).type("Giường nằm 34 chỗ").capacity(34).build();
+
+        // Past trip from 3 days ago
+        Trip pastTrip = Trip.builder().id(20L).route(route).vehicle(vehicle)
+                .departureTime(LocalDateTime.now().minusDays(3).withHour(9).withMinute(0))
+                .price(new BigDecimal("300000")).status("COMPLETED").build();
+
+        // Tomorrow morning trip (07:34)
+        Trip tomorrowMorningTrip = Trip.builder().id(249L).route(route).vehicle(vehicle)
+                .departureTime(LocalDateTime.now().plusDays(1).withHour(7).withMinute(34))
+                .price(new BigDecimal("300000")).status("PENDING").build();
+
+        // Tomorrow evening trip (21:08)
+        Trip tomorrowEveningTrip = Trip.builder().id(251L).route(route).vehicle(vehicle)
+                .departureTime(LocalDateTime.now().plusDays(1).withHour(21).withMinute(8))
+                .price(new BigDecimal("345000")).status("PENDING").build();
+
+        when(tripRepository.findAll()).thenReturn(List.of(pastTrip, tomorrowMorningTrip, tomorrowEveningTrip));
+        when(chatModel.call(any(String.class))).thenReturn("Dạ có chuyến xe #249 đi Sapa lúc 07:34 sáng mai ạ.");
+
+        Map<String, Object> response = chatbotService.ask(request, "user@gmail.com");
+
+        ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(chatModel).call(promptCaptor.capture());
+        String nlgPrompt = promptCaptor.getValue();
+
+        // Must include tomorrow morning trip #249
+        assertThat(nlgPrompt).contains("[CHUYẾN XE ID: 249]");
+        // Must NOT include past trip #20
+        assertThat(nlgPrompt).doesNotContain("[CHUYẾN XE ID: 20]");
     }
 }

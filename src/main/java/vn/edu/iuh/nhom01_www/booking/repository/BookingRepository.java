@@ -8,8 +8,14 @@ import vn.edu.iuh.nhom01_www.booking.model.Booking;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.math.BigDecimal;
 
 public interface BookingRepository extends JpaRepository<Booking, Long> {
+    @Query("SELECT COALESCE(SUM(b.totalPrice), 0) FROM Booking b WHERE b.status IN ('PAID', 'COMPLETED', 'PARTIALLY_CANCELLED')")
+    BigDecimal sumPaidAndPartialBookingTotals();
+
+    @Query("SELECT COALESCE(SUM(t.price), 0) FROM Ticket t WHERE t.booking.status = 'PARTIALLY_CANCELLED' AND t.status = 'CANCELLED'")
+    BigDecimal sumCancelledTicketsInPartialBookings();
     List<Booking> findByTripId(Long tripId);
     List<Booking> findByStatus(String status);
     List<Booking> findByCustomer_IdOrderByCreatedAtDesc(UUID customerId);

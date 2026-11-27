@@ -32,12 +32,13 @@ public class ChatIntentClassifier {
     private static final Pattern BOOK_TICKET_EXPLICIT_PATTERN = Pattern.compile(
             "(?iu)\\b(?:đặt|dat|mua)\\s+(?:giúp|cho|hộ)?\\s*(?:tôi|em|mình)?\\s*(?:\\d+\\s+)?(?:vé|chỗ|ghế)\\b|" +
             "(?iu)^\\s*(?:đặt|dat|mua)\\s+(?:vé|xe|chuyến|ngay)\\b|" +
+            "(?iu)\\b(?:đặt|dat)\\s+(?:đi|di|đến|den|về)\\s+[\\p{L}0-9]+|" +
             "(?iu)^\\s*(?:tôi\\s+đồng\\s+ý|đồng\\s+ý|xác\\s+nhận|xác\\s+nhận\\s+đặt\\s+vé|xác\\s+nhận\\s+và\\s+thanh\\s+toán|chốt\\s+đơn|chốt\\s+vé)\\s*$|" +
             "(?iu)\\b(?:chọn|chon)\\s+(?:\\d+\\s+)?(?:ghế\\s+cạnh\\s+nhau|cạnh\\s+nhau|liền\\s+kề)\\b|" +
             "(?iu)^\\s*(?:chọn\\s+chuyến|tôi\\s+chọn\\s+chuyến|chọn\\s+chuyến\\s+này)\\b");
 
     private static final Pattern SEARCH_TRIPS_PATTERN = Pattern.compile(
-            "(?iu)(?:chuyến\\s+xe\\s+khởi\\s+hành|các\\s+chuyến\\s+xe|chuyến\\s+xe\\s+(?:ngày\\s+)?mai|chuyến\\s+xe\\s+hôm\\s+nay|" +
+            "(?iu)(?:chuyến\\s+xe\\s+khởi\\s+hành|các\\s+chuyến\\s+(?:xe|ce)|chuyến\\s+xe\\s+(?:ngày\\s+)?mai|chuyến\\s+xe\\s+hôm\\s+nay|" +
             "mai\\s+có\\s+(?:những\\s+)?chuyến|hôm\\s+nay\\s+có\\s+(?:những\\s+)?chuyến|chuyến\\s+nào|" +
             "xe\\s+[a-zA-Z0-9\\s\\p{L}]+?\\s+(?:đi|đến|về|to)\\s+[a-zA-Z0-9\\s\\p{L}]+?|" +
             "(?:tìm|tra\\s*cứu|xem|kiểm\\s*tra)\\s+(?:chuyến|xe|lịch\\s*trình|lịch\\s*chạy|giờ\\s*chạy)|" +

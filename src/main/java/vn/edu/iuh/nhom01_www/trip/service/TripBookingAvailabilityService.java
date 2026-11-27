@@ -101,7 +101,7 @@ public class TripBookingAvailabilityService {
 
     private boolean isBookingOpen(Trip trip, int closeMinutesBefore) {
         if (trip == null || trip.getDepartureTime() == null || isUnavailableStatus(trip)) return false;
-        if (!LocalDateTime.now().isBefore(trip.getDepartureTime().minusMinutes(closeMinutesBefore))) return false;
+        if (!LocalDateTime.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh")).isBefore(trip.getDepartureTime().minusMinutes(closeMinutesBefore))) return false;
         return (trip.getAvailableSeats() != null ? trip.getAvailableSeats() : getAvailableSeatCount(trip)) > 0;
     }
 
@@ -109,7 +109,7 @@ public class TripBookingAvailabilityService {
         if (trip == null || isUnavailableStatus(trip)) {
             throw new CustomException("Chuyến xe này không còn mở bán vé!", HttpStatus.CONFLICT);
         }
-        if (trip.getDepartureTime() == null || !LocalDateTime.now().isBefore(trip.getDepartureTime().minusMinutes(closeMinutesBefore))) {
+        if (trip.getDepartureTime() == null || !LocalDateTime.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh")).isBefore(trip.getDepartureTime().minusMinutes(closeMinutesBefore))) {
             throw new CustomException(
                     "Đã đóng cổng bán vé " + channel + " trước giờ khởi hành " + closeMinutesBefore + " phút!",
                     HttpStatus.CONFLICT);

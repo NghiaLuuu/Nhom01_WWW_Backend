@@ -51,6 +51,16 @@ class ChatbotIntentRoutingTest {
     private Route routeHcmDalat;
     private Trip tripTomorrow;
 
+    private void stubGeneralTripSearch() {
+        lenient().when(bookingAssistantService.getBookingTools()).thenReturn(bookingTools);
+        TripSearchResultDto result = TripSearchResultDto.builder().tripId(101L)
+                .departureLocation("TP. Hồ Chí Minh").arrivalLocation("Đà Lạt")
+                .departureTimeFormatted("08:30").priceFormatted("250.000 VNĐ")
+                .vehicleType("Giường nằm").availableSeats(20).build();
+        lenient().doReturn(List.of(result)).when(bookingTools)
+                .searchAvailableTrips(isNull(), isNull(), any(), isNull(), isNull(), eq(1));
+    }
+
     @BeforeEach
     void setUp() {
         intentClassifier = new ChatIntentClassifier();
@@ -83,10 +93,35 @@ class ChatbotIntentRoutingTest {
     }
 
     @Test
+    void bookingWithoutWordTicketIsRoutedToBookingAssistant() {
+        ChatbotRequest request = new ChatbotRequest();
+        request.setQuestion("đặt đi Sapa ngày 30/11");
+        when(bookingAssistantService.assistBooking(request, "user@test.com"))
+                .thenReturn(Map.of("status", "DEPARTURE_SELECTION_REQUIRED"));
+        assertThat(chatbotService.ask(request, "user@test.com"))
+                .containsEntry("status", "DEPARTURE_SELECTION_REQUIRED");
+        verifyNoInteractions(chatModel);
+    }
+
+    @Test
+    void destinationOnlySearchDoesNotInventOriginOrDate() {
+        when(bookingAssistantService.getBookingTools()).thenReturn(bookingTools);
+        ChatbotRequest req = new ChatbotRequest();
+        req.setQuestion("các chuyến ce đi đà lạt");
+
+        Map<String, Object> response = chatbotService.ask(req, "test@example.com");
+
+        verify(bookingTools).searchAvailableTrips(isNull(), eq("đà lạt"), isNull(), isNull(), isNull(), eq(1));
+        assertThat(response.get("status")).isEqualTo("NO_TRIPS_FOUND");
+        assertThat((String) response.get("answer")).contains("đà lạt").doesNotContain("TP.HCM", "ngày mai");
+        verifyNoInteractions(chatModel);
+    }
+
+    @Test
     @DisplayName("1. 'Các chuyến xe khởi hành vào ngày mai' -> Phân loại SEARCH_TRIPS và hiển thị danh sách chuyến ngày mai")
     void test1_SearchTripsTomorrow() {
         LocalDate tomorrow = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh")).plusDays(1);
-        when(tripRepository.findAll()).thenReturn(List.of(tripTomorrow));
+        stubGeneralTripSearch();
 
         ChatbotRequest req = new ChatbotRequest();
         req.setQuestion("Các chuyến xe khởi hành vào ngày mai");
@@ -96,7 +131,7 @@ class ChatbotIntentRoutingTest {
         assertThat(res.get("cardType")).isEqualTo("TRIP_LIST");
         assertThat(res.get("status")).isEqualTo("TRIPS_FOUND");
         String answer = (String) res.get("answer");
-        assertThat(answer).contains("CÁC CHUYẾN XE KHỞI HÀNH");
+        assertThat(answer).contains("DANH SÁCH CHUYẾN XE");
         assertThat(answer).contains("Chuyến #101");
         assertThat(answer).doesNotContain("muốn khởi hành từ điểm nào đến Đà Lạt");
     }
@@ -259,7 +294,7 @@ class ChatbotIntentRoutingTest {
     @Test
     @DisplayName("8. Chuyển từ CANCEL_TICKET sang SEARCH_TRIPS -> Reset booking draft, tra cứu chuyến mới")
     void test8_SwitchFromCancelToSearchTrips() {
-        when(tripRepository.findAll()).thenReturn(List.of(tripTomorrow));
+        stubGeneralTripSearch();
 
         ChatbotRequest req = new ChatbotRequest();
         req.setQuestion("Các chuyến xe khởi hành vào ngày mai");
@@ -274,7 +309,7 @@ class ChatbotIntentRoutingTest {
     @Test
     @DisplayName("9. Không dùng bookingId từ session cũ khi bắt đầu tra cứu mới")
     void test9_DoNotUseBookingIdFromOldSession() {
-        when(tripRepository.findAll()).thenReturn(List.of(tripTomorrow));
+        stubGeneralTripSearch();
 
         ChatbotRequest req = new ChatbotRequest();
         req.setQuestion("Các chuyến xe khởi hành vào ngày mai");
@@ -289,7 +324,7 @@ class ChatbotIntentRoutingTest {
     @Test
     @DisplayName("10. AI không trả lời lặp lại câu hỏi 'Dạ anh/chị muốn khởi hành từ điểm nào đến Đà Lạt ạ?'")
     void test10_AiDoesNotRepeatStaleQuestion() {
-        when(tripRepository.findAll()).thenReturn(List.of(tripTomorrow));
+        stubGeneralTripSearch();
 
         ChatbotRequest req = new ChatbotRequest();
         req.setQuestion("Các chuyến xe khởi hành vào ngày mai");
@@ -350,10 +385,7 @@ class ChatbotIntentRoutingTest {
     @Test
     @DisplayName("14. ACCEPTANCE TEST: 3 câu hỏi độc lập trong cùng 1 hội thoại -> Xử lý chính xác, không lặp lại câu hỏi cũ")
     void test14_AcceptanceTestThreeQueriesInSameConversation() {
-        when(bookingAssistantService.getBookingTools()).thenReturn(bookingTools);
-
-        // Setup TripRepository for Query 1
-        when(tripRepository.findAll()).thenReturn(List.of(tripTomorrow));
+        stubGeneralTripSearch();
 
         // Setup BookingTools for Query 2
         TripSearchResultDto tripHcmDalat = TripSearchResultDto.builder()

@@ -13,6 +13,8 @@ import vn.edu.iuh.nhom01_www.booking.repository.BookingRepository;
 import vn.edu.iuh.nhom01_www.booking.service.SeatHoldRedisService;
 import vn.edu.iuh.nhom01_www.cancelrequest.model.CancelRequest;
 import vn.edu.iuh.nhom01_www.cancelrequest.repository.CancelRequestRepository;
+import vn.edu.iuh.nhom01_www.cancelrequest.model.CancellationFinancialRecord;
+import vn.edu.iuh.nhom01_www.cancelrequest.repository.CancellationFinancialRecordRepository;
 import vn.edu.iuh.nhom01_www.chatbot.cancellation.dto.*;
 import vn.edu.iuh.nhom01_www.chatbot.cancellation.service.CancellationPolicyService;
 import vn.edu.iuh.nhom01_www.chatbot.cancellation.service.CancellationPreviewManager;
@@ -40,6 +42,7 @@ public class CancellationTools {
     private final TicketRepository ticketRepository;
     private final PaymentRepository paymentRepository;
     private final CancelRequestRepository cancelRequestRepository;
+    private final CancellationFinancialRecordRepository cancellationFinancialRecordRepository;
     private final SeatHoldRedisService seatHoldRedisService;
     private final CurrentUserService currentUserService;
     private final CancellationPolicyService policyService;
@@ -354,6 +357,9 @@ public class CancellationTools {
                         .orElseThrow(() -> new CustomException("Bản tóm tắt hủy vé đã hết hạn hoặc không tồn tại. Quý khách vui lòng kiểm tra lại!", HttpStatus.GONE)));
 
         Long bId = (bookingId != null) ? bookingId : preview.getBookingId();
+        if (!Objects.equals(bId, preview.getBookingId())) {
+            throw new CustomException("Đơn đặt vé không khớp với bản xác nhận hủy!", HttpStatus.BAD_REQUEST);
+        }
         Booking booking = bookingRepository.findByIdAndCustomerId(bId, customer.getId())
                 .orElseThrow(() -> new CustomException("Không tìm thấy đơn đặt vé thuộc tài khoản của bạn!", HttpStatus.NOT_FOUND));
 
@@ -362,6 +368,17 @@ public class CancellationTools {
         }
 
         List<Long> toCancelIds = preview.getTicketIdsToCancel();
+        CancellationEligibilityDto currentEligibility = policyService.evaluateEligibility(booking, toCancelIds);
+        if (!currentEligibility.isEligible()) {
+            throw new CustomException("Không đủ điều kiện hủy vé: " + currentEligibility.getReason(), HttpStatus.BAD_REQUEST);
+        }
+        if (currentEligibility.getFeePercent() != preview.getFeePercent()
+                || currentEligibility.getCancellationFee().compareTo(preview.getFeeAmount()) != 0
+                || currentEligibility.getRefundAmount().compareTo(preview.getRefundAmount()) != 0
+                || !new HashSet<>(currentEligibility.getCancellableTicketIds()).equals(new HashSet<>(toCancelIds))) {
+            throw new CustomException("Điều kiện hủy đã thay đổi. Vui lòng xem lại mức hoàn tiền trước khi xác nhận.", HttpStatus.CONFLICT);
+        }
+        boolean paidBeforeCancellation = currentEligibility.isPaid();
         List<Ticket> ticketsToCancel = new ArrayList<>();
         List<String> cancelledSeats = new ArrayList<>();
         List<String> remainingSeats = new ArrayList<>();
@@ -391,6 +408,15 @@ public class CancellationTools {
         }
         bookingRepository.save(booking);
 
+        cancellationFinancialRecordRepository.save(CancellationFinancialRecord.builder()
+                .booking(booking)
+                .confirmationToken(preview.getConfirmationToken())
+                .feePercent(preview.getFeePercent())
+                .feeAmount(preview.getFeeAmount())
+                .refundAmount(preview.getRefundAmount())
+                .recordedAt(LocalDateTime.now())
+                .build());
+
         // Record CancelRequest history
         try {
             CancelRequest cr = CancelRequest.builder()
@@ -405,11 +431,11 @@ public class CancellationTools {
         }
 
         // Demo Refund Simulation
-        String refundStatus = "NO_REFUND_UNPAID";
+        String refundStatus = paidBeforeCancellation ? "NO_REFUND" : "NO_REFUND_UNPAID";
         String refundTxnId = null;
         String refundMethod = preview.getRefundMethod();
 
-        if ("PAID".equalsIgnoreCase(booking.getStatus()) || "PARTIALLY_CANCELLED".equalsIgnoreCase(booking.getStatus()) || preview.getRefundAmount().compareTo(BigDecimal.ZERO) > 0) {
+        if (paidBeforeCancellation && preview.getRefundAmount().compareTo(BigDecimal.ZERO) > 0) {
             Optional<Payment> paymentOpt = paymentRepository.findByBookingId(booking.getId());
             if (paymentOpt.isPresent()) {
                 Payment payment = paymentOpt.get();

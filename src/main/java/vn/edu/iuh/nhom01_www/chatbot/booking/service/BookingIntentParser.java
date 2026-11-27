@@ -73,7 +73,7 @@ public class BookingIntentParser {
         if (text == null) {
             text = "";
         }
-        String clean = text.trim();
+        String clean = text.trim().replaceAll("(?iu)\\b(sg)(?=ngày|ngay)", "$1 ");
         String lower = clean.toLowerCase(Locale.ROOT);
 
         BookingIntent.BookingIntentBuilder builder = BookingIntent.builder()
@@ -509,7 +509,7 @@ public class BookingIntentParser {
         if (raw == null) return null;
         String s = raw.trim();
         s = s.replaceAll("(?iu)^(?:xe|vé|chuyến|đi|đến|từ|khoảng|lúc|giúp|tôi|cho)\\s+", "");
-        s = s.replaceAll("(?iu)\\s+(?:lúc|vào|ngày|mai|tối|sáng|chiều|trưa|tầm).*$", "");
+        s = s.replaceAll("(?iu)\\s+(?:lúc|vào|ngày|mai|tối|sáng|chiều|trưa|tầm|giúp|hộ|cho\\s+(?:tôi|em|mình)|với|nhé|ạ).*$", "");
         return s.trim();
     }
 }

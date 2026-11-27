@@ -10,6 +10,8 @@ import vn.edu.iuh.nhom01_www.booking.repository.BookingRepository;
 import vn.edu.iuh.nhom01_www.booking.service.BookingService;
 import vn.edu.iuh.nhom01_www.booking.service.SeatHoldRedisService;
 import vn.edu.iuh.nhom01_www.cancelrequest.repository.CancelRequestRepository;
+import vn.edu.iuh.nhom01_www.cancelrequest.repository.CancellationFinancialRecordRepository;
+import vn.edu.iuh.nhom01_www.cancelrequest.model.CancellationFinancialRecord;
 import vn.edu.iuh.nhom01_www.chatbot.cancellation.dto.*;
 import vn.edu.iuh.nhom01_www.chatbot.cancellation.service.CancellationAssistantService;
 import vn.edu.iuh.nhom01_www.chatbot.cancellation.service.CancellationIntentParser;
@@ -50,6 +52,7 @@ class TicketCancellationTest {
     private TicketRepository ticketRepository;
     private PaymentRepository paymentRepository;
     private CancelRequestRepository cancelRequestRepository;
+    private CancellationFinancialRecordRepository financialRecordRepository;
     private SeatHoldRedisService seatHoldRedisService;
     private CurrentUserService currentUserService;
     private ChatModel chatModel;
@@ -79,6 +82,7 @@ class TicketCancellationTest {
         ticketRepository = mock(TicketRepository.class);
         paymentRepository = mock(PaymentRepository.class);
         cancelRequestRepository = mock(CancelRequestRepository.class);
+        financialRecordRepository = mock(CancellationFinancialRecordRepository.class);
         seatHoldRedisService = mock(SeatHoldRedisService.class);
         currentUserService = mock(CurrentUserService.class);
         chatModel = mock(ChatModel.class);
@@ -91,6 +95,7 @@ class TicketCancellationTest {
                 ticketRepository,
                 paymentRepository,
                 cancelRequestRepository,
+                financialRecordRepository,
                 seatHoldRedisService,
                 currentUserService,
                 policyService,
@@ -185,20 +190,69 @@ class TicketCancellationTest {
     }
 
     @Test
+    void explainsNoRefundWhenMatchingTicketIsWithinTwoHours() {
+        mockTrip.setDepartureTime(LocalDateTime.now().plusHours(1));
+        ChatbotRequest request = new ChatbotRequest();
+        request.setQuestion("hủy vé đi đà lạt giúp tôi");
+
+        CancellationIntent intent = intentParser.parse(request.getQuestion(), List.of());
+        assertThat(intent.getDestinationKeyword()).isEqualToIgnoringCase("đà lạt");
+        Map<String, Object> response = assistantService.assistCancellation(request, mockCustomer.getEmail());
+        assertThat(response).containsEntry("status", "PREVIEW_REQUIRED");
+        CancellationPreviewDto preview = (CancellationPreviewDto) response.get("preview");
+        assertThat(preview.getFeePercent()).isEqualTo(100);
+        assertThat(preview.getRefundAmount()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(preview.getCancellationPolicy()).contains("Không hoàn tiền");
+    }
+
+    @Test
+    void cancellationListExcludesIneligibleBookings() {
+        Booking other = Booking.builder().id(802L).customer(mockCustomer).trip(mockTrip)
+                .totalPrice(new BigDecimal("250000")).status("PAID").tickets(new ArrayList<>()).build();
+        other.getTickets().add(Ticket.builder().id(903L).seat(seatA01).price(new BigDecimal("250000")).status("ISSUED").build());
+        Trip departed = Trip.builder().route(mockRoute).departureTime(LocalDateTime.now().minusHours(1)).build();
+        Booking expired = Booking.builder().id(803L).customer(mockCustomer).trip(departed)
+                .totalPrice(new BigDecimal("250000")).status("PAID").tickets(new ArrayList<>()).build();
+        expired.getTickets().add(Ticket.builder().id(904L).seat(seatA02).price(new BigDecimal("250000")).status("ISSUED").build());
+        when(bookingRepository.findByCustomer_IdOrderByCreatedAtDesc(mockCustomer.getId()))
+                .thenReturn(List.of(mockPaidBooking, other, expired));
+
+        ChatbotRequest request = new ChatbotRequest();
+        request.setQuestion("Hủy giúp tôi vé đến Đà Lạt");
+        Map<String, Object> response = assistantService.assistCancellation(request, mockCustomer.getEmail());
+        assertThat(response).containsEntry("status", "MULTIPLE_BOOKINGS_FOUND");
+        @SuppressWarnings("unchecked")
+        List<MyBookingSummaryDto> bookings = (List<MyBookingSummaryDto>) response.get("bookings");
+        assertThat(bookings).extracting(MyBookingSummaryDto::getBookingId).containsExactly(801L, 802L);
+    }
+
+    @Test
+    void unpaidBookingWithoutActiveTicketsIsNotCancellable() {
+        mockPaidBooking.setStatus("PENDING_PAYMENT");
+        ticket1.setStatus("CANCELLED");
+        ticket2.setStatus("NO_SHOW");
+        assertThat(policyService.evaluateEligibility(mockPaidBooking, null).isEligible()).isFalse();
+    }
+
+    @Test
     @DisplayName("Scenario 1: Hủy toàn bộ booking thành công")
     void test1_CancelAllTicketsSuccess() {
         CancellationPreviewDto preview = cancellationTools.previewCancellation(801L, null, "Hủy cả đơn");
         assertThat(preview.getConfirmationToken()).isNotNull();
         assertThat(preview.getTicketCountToCancel()).isEqualTo(2);
         assertThat(preview.isPartialCancellation()).isFalse();
-        assertThat(preview.getFeePercent()).isEqualTo(10);
-        assertThat(preview.getRefundAmount()).isEqualByComparingTo(new BigDecimal("450000"));
+        assertThat(preview.getFeePercent()).isEqualTo(20);
+        assertThat(preview.getRefundAmount()).isEqualByComparingTo(new BigDecimal("400000"));
 
         CancellationResultDto result = cancellationTools.confirmCancellation(preview.getConfirmationToken(), 801L, null);
         assertThat(result.isSuccess()).isTrue();
         assertThat(result.getBookingStatus()).isEqualTo("CANCELLED");
         assertThat(result.getCancelledSeats()).containsExactlyInAnyOrder("A01", "A02");
         assertThat(result.getRefundStatus()).isEqualTo("REFUNDED");
+        var recordCaptor = org.mockito.ArgumentCaptor.forClass(CancellationFinancialRecord.class);
+        verify(financialRecordRepository).save(recordCaptor.capture());
+        assertThat(recordCaptor.getValue().getFeeAmount()).isEqualByComparingTo("100000");
+        assertThat(recordCaptor.getValue().getRefundAmount()).isEqualByComparingTo("400000");
         assertThat(mockPaidBooking.getStatus()).isEqualTo("CANCELLED");
         assertThat(ticket1.getStatus()).isEqualTo("CANCELLED");
         assertThat(ticket2.getStatus()).isEqualTo("CANCELLED");
@@ -213,7 +267,7 @@ class TicketCancellationTest {
         assertThat(preview.isPartialCancellation()).isTrue();
         assertThat(preview.getSeatNamesToCancel()).containsExactly("A01");
         assertThat(preview.getRemainingSeatNames()).containsExactly("A02");
-        assertThat(preview.getRefundAmount()).isEqualByComparingTo(new BigDecimal("225000")); // 250k - 10% = 225k
+        assertThat(preview.getRefundAmount()).isEqualByComparingTo(new BigDecimal("200000")); // 250k - 20% = 200k
 
         CancellationResultDto result = cancellationTools.confirmCancellation(preview.getConfirmationToken(), 801L, List.of(901L));
         assertThat(result.isSuccess()).isTrue();
@@ -264,17 +318,27 @@ class TicketCancellationTest {
     }
 
     @Test
-    @DisplayName("Scenario 6: Quá thời hạn hủy (dưới 2 giờ hoặc đã khởi hành)")
-    void test6_PastCancellationDeadlineRejection() {
-        // Departure is only 1 hour away (< 2 hours cutoff)
+    @DisplayName("Scenario 6: Hủy trong vòng 2 giờ không được hoàn tiền")
+    void test6_CancellationWithinTwoHoursHasNoRefund() {
+        // Departure is only 1 hour away: cancellation is allowed, but no refund is issued.
         mockTrip.setDepartureTime(LocalDateTime.now().plusHours(1));
 
-        assertThatThrownBy(() -> cancellationTools.previewCancellation(801L, null, "Hủy gấp sát giờ"))
-                .isInstanceOf(CustomException.class)
-                .satisfies(e -> {
-                    CustomException ce = (CustomException) e;
-                    assertThat(ce.getMessage()).contains("quá thời hạn hủy vé trực tuyến");
-                });
+        CancellationPreviewDto preview = cancellationTools.previewCancellation(801L, null, "Hủy gấp sát giờ");
+        assertThat(preview.getFeePercent()).isEqualTo(100);
+        assertThat(preview.getFeeAmount()).isEqualByComparingTo("500000");
+        assertThat(preview.getRefundAmount()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(preview.getCancellationPolicy()).contains("Không hoàn tiền");
+    }
+
+    @Test
+    @DisplayName("Mốc đúng 2 giờ trước khi chạy cũng không được hoàn tiền")
+    void cancellationAtTwoHourBoundaryHasNoRefund() {
+        mockTrip.setDepartureTime(LocalDateTime.now().plusHours(2));
+
+        CancellationPreviewDto preview = cancellationTools.previewCancellation(801L, null, "Hủy trước đúng 2 giờ");
+
+        assertThat(preview.getFeePercent()).isEqualTo(100);
+        assertThat(preview.getRefundAmount()).isEqualByComparingTo(BigDecimal.ZERO);
     }
 
     @Test
@@ -615,7 +679,7 @@ class TicketCancellationTest {
         Map<String, Object> response = assistantService.assistCancellation(request, mockCustomer.getEmail());
 
         assertThat(response.get("status")).isEqualTo("NO_BOOKINGS_FOUND");
-        assertThat((String) response.get("answer")).contains("không tìm thấy vé đến **Đà Lạt** trong danh sách vé của anh/chị");
+        assertThat((String) response.get("answer")).contains("không tìm thấy vé đến **Đà Lạt** đủ điều kiện hủy");
     }
 
     @Test

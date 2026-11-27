@@ -254,7 +254,7 @@ public class CancellationIntentParser {
         if (loc == null) return null;
         String s = loc.trim();
         s = s.replaceAll("(?iu)^(?:(?:xe|vé|chuyến|đi|đến|từ|về|hủy|giúp|tôi|cho|em|mình|hộ|đơn|bán|mua)\\s+)+", "");
-        s = s.replaceAll("(?iu)\\s+(?:ngày|lúc|vào|tối|sáng|trưa|chiều|mai|hôm).*$", "");
+        s = s.replaceAll("(?iu)\\s+(?:ngày|lúc|vào|tối|sáng|trưa|chiều|mai|hôm|giúp|giup|hộ|cho\\s+(?:tôi|em|mình)|với|nhé|ạ).*$", "");
         s = s.trim();
         if (s.isEmpty() || !isLikelyLocation(s)) {
             return null;
