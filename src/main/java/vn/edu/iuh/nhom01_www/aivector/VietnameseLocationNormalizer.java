@@ -1,6 +1,7 @@
 package vn.edu.iuh.nhom01_www.aivector;
 
 import java.text.Normalizer;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -8,14 +9,17 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /** Normalizes common Vietnamese location aliases for vector metadata filters. */
-final class VietnameseLocationNormalizer {
+public final class VietnameseLocationNormalizer {
 
     private static final Pattern DIRECTIONAL_QUERY = Pattern.compile(
             "(?iu)\\btừ\\s+(.+?)\\s+(?:đến|đi)\\s+(.+?)(?:[?.!,;:]|$)");
     private static final Map<String, String> ALIASES = Map.ofEntries(
             Map.entry("sai gon", "tp hcm"),
+            Map.entry("sg", "tp hcm"),
             Map.entry("ho chi minh", "tp hcm"),
             Map.entry("thanh pho ho chi minh", "tp hcm"),
+            Map.entry("tp ho chi minh", "tp hcm"),
+            Map.entry("thanh pho hcm", "tp hcm"),
             Map.entry("tp hcm", "tp hcm"),
             Map.entry("tphcm", "tp hcm"),
             Map.entry("hcm", "tp hcm"),
@@ -34,9 +38,18 @@ final class VietnameseLocationNormalizer {
             Map.entry("ha long", "ha long"),
             Map.entry("hai phong", "hai phong"),
             Map.entry("sapa", "sapa"),
-            Map.entry("sa pa", "sapa"));
+            Map.entry("sa pa", "sapa"),
+            Map.entry("plei ku", "pleiku"),
+            Map.entry("pleiku", "pleiku"),
+            Map.entry("gia lai", "pleiku"),
+            Map.entry("tinh gia lai", "pleiku"),
+            Map.entry("tp pleiku", "pleiku"));
 
-    String normalize(String location) {
+    private static final List<Map.Entry<String, String>> SORTED_ALIASES = ALIASES.entrySet().stream()
+            .sorted((e1, e2) -> Integer.compare(e2.getKey().length(), e1.getKey().length()))
+            .toList();
+
+    public String normalize(String location) {
         if (location == null || location.isBlank()) {
             return "";
         }
@@ -45,10 +58,18 @@ final class VietnameseLocationNormalizer {
                 .replace('đ', 'd').replace('Đ', 'D')
                 .toLowerCase(Locale.ROOT)
                 .replaceAll("[^a-z0-9]+", " ").trim();
-        return ALIASES.getOrDefault(decomposed, decomposed);
+        if (ALIASES.containsKey(decomposed)) {
+            return ALIASES.get(decomposed);
+        }
+        for (Map.Entry<String, String> entry : SORTED_ALIASES) {
+            if (decomposed.startsWith(entry.getKey() + " ")) {
+                return entry.getValue();
+            }
+        }
+        return decomposed;
     }
 
-    Optional<DirectionalLocation> directionalLocations(String query) {
+    public Optional<DirectionalLocation> directionalLocations(String query) {
         String candidate = query == null ? "" : query;
         // A multi-leg request has no unambiguous pair for an exact metadata filter. Keep
         // semantic retrieval available rather than falsely treating the first/last city as one route.
@@ -76,6 +97,6 @@ final class VietnameseLocationNormalizer {
         return count;
     }
 
-    record DirectionalLocation(String departure, String arrival) {
+    public record DirectionalLocation(String departure, String arrival) {
     }
 }

@@ -25,6 +25,8 @@ spring.ai:
 
 app:
   ai-vector:
+    ingestion:
+      batch-size: 50
     embedding:
       collection-name: vector_store
       provider: openai

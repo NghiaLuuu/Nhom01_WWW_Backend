@@ -10,8 +10,7 @@ import vn.edu.iuh.nhom01_www.trip.model.Trip;
 import vn.edu.iuh.nhom01_www.ticket.repository.TicketRepository;
 
 import java.time.LocalDateTime;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.*;
 
 /** Determines whether a trip can still accept a booking without changing its permanent status. */
 @Service
@@ -33,8 +32,55 @@ public class TripBookingAvailabilityService {
                 ? trip.getVehicle().getCapacity() : 45;
 
         Set<Long> unavailableSeatIds = new HashSet<>(ticketRepository.findBookedSeatIdsByTripId(trip.getId()));
-        unavailableSeatIds.addAll(seatHoldRedisService.getHeldSeatIdsByTripId(trip.getId()));
+        try {
+            unavailableSeatIds.addAll(seatHoldRedisService.getHeldSeatIdsByTripId(trip.getId()));
+        } catch (Exception ignored) {}
         return Math.max(0, capacity - unavailableSeatIds.size());
+    }
+
+    /**
+     * Batch-populates available seat counts and open/close flags for a list of trips
+     * in a single bulk database query, avoiding N+1 round trips.
+     */
+    public void populateAvailabilityBatch(List<Trip> trips) {
+        if (trips == null || trips.isEmpty()) return;
+
+        List<Long> tripIds = trips.stream()
+                .filter(Objects::nonNull)
+                .map(Trip::getId)
+                .filter(Objects::nonNull)
+                .toList();
+
+        if (tripIds.isEmpty()) return;
+
+        Map<Long, Integer> bookedCountMap = new HashMap<>();
+        try {
+            List<Object[]> rows = ticketRepository.countBookedSeatsByTripIds(tripIds);
+            for (Object[] row : rows) {
+                Long tId = ((Number) row[0]).longValue();
+                Long cnt = ((Number) row[1]).longValue();
+                bookedCountMap.put(tId, cnt.intValue());
+            }
+        } catch (Exception ignored) {}
+
+        for (Trip trip : trips) {
+            if (trip == null || trip.getId() == null) continue;
+            int capacity = trip.getVehicle() != null && trip.getVehicle().getCapacity() != null
+                    ? trip.getVehicle().getCapacity() : 45;
+            int bookedCount = bookedCountMap.getOrDefault(trip.getId(), 0);
+
+            int heldCount = 0;
+            if (bookedCount < capacity && !isUnavailableStatus(trip)) {
+                try {
+                    heldCount = seatHoldRedisService.getHeldSeatIdsByTripId(trip.getId()).size();
+                } catch (Exception ignored) {}
+            }
+
+            int available = Math.max(0, capacity - bookedCount - heldCount);
+            trip.setAvailableSeats(available);
+            trip.setWebBookingOpen(isBookingOpen(trip, effectiveWebCloseMinutes()));
+            trip.setPosBookingOpen(isBookingOpen(trip, effectivePosCloseMinutes()));
+        }
     }
 
     public boolean isWebBookingOpen(Trip trip) {
@@ -55,15 +101,15 @@ public class TripBookingAvailabilityService {
 
     private boolean isBookingOpen(Trip trip, int closeMinutesBefore) {
         if (trip == null || trip.getDepartureTime() == null || isUnavailableStatus(trip)) return false;
-        if (!LocalDateTime.now().isBefore(trip.getDepartureTime().minusMinutes(closeMinutesBefore))) return false;
-        return getAvailableSeatCount(trip) > 0;
+        if (!LocalDateTime.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh")).isBefore(trip.getDepartureTime().minusMinutes(closeMinutesBefore))) return false;
+        return (trip.getAvailableSeats() != null ? trip.getAvailableSeats() : getAvailableSeatCount(trip)) > 0;
     }
 
     private void ensureBookingOpen(Trip trip, int closeMinutesBefore, String channel) {
         if (trip == null || isUnavailableStatus(trip)) {
             throw new CustomException("Chuyến xe này không còn mở bán vé!", HttpStatus.CONFLICT);
         }
-        if (trip.getDepartureTime() == null || !LocalDateTime.now().isBefore(trip.getDepartureTime().minusMinutes(closeMinutesBefore))) {
+        if (trip.getDepartureTime() == null || !LocalDateTime.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh")).isBefore(trip.getDepartureTime().minusMinutes(closeMinutesBefore))) {
             throw new CustomException(
                     "Đã đóng cổng bán vé " + channel + " trước giờ khởi hành " + closeMinutesBefore + " phút!",
                     HttpStatus.CONFLICT);

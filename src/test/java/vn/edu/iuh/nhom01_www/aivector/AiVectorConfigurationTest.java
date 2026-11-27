@@ -27,7 +27,7 @@ class AiVectorConfigurationTest {
 
     @Test
     void aiVectorProfileUsesCosineHnswAndOpenAiEmbeddingWithoutCallingOpenAi() {
-        Properties properties = yamlProperties("application-ai-vector.yml");
+        Properties properties = yamlProperties("application.yml");
 
         assertEquals("ai-vector", properties.getProperty("spring.config.activate.on-profile"));
         assertEquals("${OPENAI_API_KEY}", properties.getProperty("spring.ai.openai.api-key"));

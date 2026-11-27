@@ -21,6 +21,7 @@ import vn.edu.iuh.nhom01_www.user.repository.CustomerRepository;
 import vn.edu.iuh.nhom01_www.user.repository.StaffRepository;
 import vn.edu.iuh.nhom01_www.user.service.UserService;
 import vn.edu.iuh.nhom01_www.booking.repository.BookingRepository;
+import vn.edu.iuh.nhom01_www.cancelrequest.repository.CancellationFinancialRecordRepository;
 import vn.edu.iuh.nhom01_www.trip.repository.TripRepository;
 import java.math.BigDecimal;
 import java.util.Map;
@@ -43,6 +44,7 @@ public class UserServiceImpl implements UserService {
     private final PasswordEncoder passwordEncoder;
     private final BookingRepository bookingRepository;
     private final TripRepository tripRepository;
+    private final CancellationFinancialRecordRepository cancellationFinancialRecordRepository;
 
     @Override
     public Object register(RegisterRequest request) { return null; }
@@ -222,7 +224,24 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public Object getRevenueStatistics() {
-        return Collections.singletonMap("message", "Revenue statistics not fully implemented yet");
+        BigDecimal ticketRevenue = bookingRepository.sumPaidAndPartialBookingTotals()
+                .subtract(bookingRepository.sumCancelledTicketsInPartialBookings());
+        BigDecimal cancellationFees = cancellationFinancialRecordRepository.sumFees();
+        Map<String, Object> cancellationByBooking = new HashMap<>();
+        for (Object[] row : cancellationFinancialRecordRepository.summarizeByBooking()) {
+            int minPercent = ((Number) row[3]).intValue();
+            int maxPercent = ((Number) row[4]).intValue();
+            Map<String, Object> details = new HashMap<>();
+            details.put("feeAmount", row[1]);
+            details.put("refundAmount", row[2]);
+            if (minPercent == maxPercent) details.put("feePercent", minPercent);
+            cancellationByBooking.put(row[0].toString(), details);
+        }
+        return Map.of("totalRevenue", ticketRevenue.add(cancellationFees),
+                "ticketRevenue", ticketRevenue,
+                "cancellationFees", cancellationFees,
+                "simulatedRefunds", cancellationFinancialRecordRepository.sumRefunds(),
+                "cancellationByBooking", cancellationByBooking);
     }
 
     // --- OTHER STUBS ---

@@ -1,5 +1,7 @@
 package vn.edu.iuh.nhom01_www.recommendation.service.impl;
 
+import org.springframework.data.domain.PageRequest;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -128,8 +130,14 @@ public class RecommendationServiceImpl implements RecommendationService {
             }
         }
 
-        // 4. Resolve Candidate Trips & Hybrid Score
-        List<Trip> allTrips = tripRepository.findAll();
+        // 4. Resolve Candidate Trips & Hybrid Score (optimized: prefer upcoming trips, fallback to findAll for compatibility)
+        List<Trip> allTrips = Collections.emptyList();
+        try {
+            allTrips = tripRepository.findUpcomingTrips(LocalDateTime.now().minusMinutes(15), PageRequest.of(0, 300));
+        } catch (Exception ignored) {}
+        if (allTrips == null || allTrips.isEmpty()) {
+            allTrips = tripRepository.findAll();
+        }
         if (allTrips.isEmpty()) {
             return Collections.emptyList();
         }
@@ -316,6 +324,15 @@ public class RecommendationServiceImpl implements RecommendationService {
             recommendations = scoredCandidates.stream().limit(maxLimit).collect(Collectors.toList());
         }
 
+        // Populate exact available seats only for the selected top recommendations
+        for (RecommendedTripDto dto : recommendations) {
+            try {
+                tripRepository.findById(dto.getTripId()).ifPresent(t -> {
+                    dto.setAvailableSeats(tripBookingAvailabilityService.getAvailableSeatCount(t));
+                });
+            } catch (Exception ignored) {}
+        }
+
         // 5. Save to UserRecommendation table
         try {
             for (RecommendedTripDto dto : recommendations.stream().limit(3).toList()) {
@@ -352,7 +369,7 @@ public class RecommendationServiceImpl implements RecommendationService {
         String vehicleType = trip.getVehicle() != null ? trip.getVehicle().getType() : "Limousine 34 phòng";
         String plate = trip.getVehicle() != null ? trip.getVehicle().getLicensePlate() : "51B-892.12";
 
-        int availableSeats = 28;
+        int availableSeats = trip.getAvailableSeats() != null ? trip.getAvailableSeats() : 28;
         try {
             availableSeats = tripBookingAvailabilityService.getAvailableSeatCount(trip);
         } catch (Exception ignored) {}

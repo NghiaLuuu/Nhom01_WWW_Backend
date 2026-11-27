@@ -26,6 +26,28 @@ public class ChatbotController {
         return ResponseEntity.ok(new ApiResponse<>(true, "Success", chatbotService.ask(request, currentUserEmail)));
     }
 
+    @PostMapping("/booking-assistant")
+    @Auditable(action = "CHATBOT_BOOKING_ASSISTANT", entityName = "Chatbot")
+    public ResponseEntity<ApiResponse<Object>> bookingAssistant(@RequestBody ChatbotRequest request) {
+        String currentUserEmail = "ANONYMOUS";
+        org.springframework.security.core.Authentication auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.isAuthenticated() && !auth.getPrincipal().equals("anonymousUser")) {
+            currentUserEmail = auth.getName();
+        }
+        return ResponseEntity.ok(new ApiResponse<>(true, "Success", chatbotService.assistBooking(request, currentUserEmail)));
+    }
+
+    @PostMapping("/cancellation-assistant")
+    @Auditable(action = "CHATBOT_CANCELLATION_ASSISTANT", entityName = "Chatbot")
+    public ResponseEntity<ApiResponse<Object>> cancellationAssistant(@RequestBody ChatbotRequest request) {
+        String currentUserEmail = "ANONYMOUS";
+        org.springframework.security.core.Authentication auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.isAuthenticated() && !auth.getPrincipal().equals("anonymousUser")) {
+            currentUserEmail = auth.getName();
+        }
+        return ResponseEntity.ok(new ApiResponse<>(true, "Success", chatbotService.assistCancellation(request, currentUserEmail)));
+    }
+
     @PostMapping("/ingest")
     @Auditable(action = "CHATBOT_INGEST_VECTORS", entityName = "Chatbot")
     public ResponseEntity<ApiResponse<Object>> ingest() {

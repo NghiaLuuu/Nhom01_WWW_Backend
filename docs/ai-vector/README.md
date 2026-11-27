@@ -2,6 +2,8 @@
 
 Module `aivector` lập chỉ mục ngữ nghĩa cho `Route`, `Trip`, `Vehicle` bằng OpenAI embedding và PostgreSQL pgvector. Mục tiêu là tìm ngữ nghĩa có kiểm soát hướng tuyến, không thay thế logic đặt vé, trạng thái chuyến hay kiểm tra ghế.
 
+> **CẬP NHẬT KIẾN TRÚC MỚI:** Toàn bộ hệ thống hiện đã hợp nhất vào **Shared Docker & Unified Database** (`busbooking` trên `postgres_db_local` với pgvector 0.8.7). Xem hướng dẫn chi tiết tại [Tài liệu Hạ tầng Hợp nhất](../infrastructure/SHARED-DOCKER-DATABASE.md) và [Kế hoạch Decommission](../infrastructure/DECOMMISSION-PLAN.md).
+
 ## Mục lục
 
 - [Kiến trúc](01-ARCHITECTURE.md)
@@ -11,6 +13,7 @@ Module `aivector` lập chỉ mục ngữ nghĩa cho `Route`, `Trip`, `Vehicle` 
 - [Testing](05-TESTING-GUIDE.md)
 - [Troubleshooting](06-TROUBLESHOOTING.md)
 - [Bàn giao developer](07-DEVELOPER-HANDOVER.md)
+- [Shared Docker & Database Architecture](../infrastructure/SHARED-DOCKER-DATABASE.md)
 
 ## 1. Kiểm tra công cụ
 
@@ -19,113 +22,62 @@ Mục đích: xác nhận Java 17, Docker và Maven Docker trước khi dùng mo
 ```powershell
 java -version
 docker version
-docker run --rm maven:3.9.6-eclipse-temurin-17 mvn -version
+docker compose version
 ```
 
-Kết quả mong đợi: Java 17 và Docker daemon hoạt động. Nếu Maven trên Windows không có trong `PATH`, dùng Maven Docker như các lệnh trong tài liệu này.
+Kết quả mong đợi: Java 17 và Docker daemon hoạt động.
 
-Nếu chưa có source, clone repository được cấp quyền rồi vào đúng nhánh:
+## 2. Chọn môi trường đúng (Unified Runtime Database)
+
+| Môi trường | Mục đích | Container / Database | Có được reset? |
+|---|---|---|---|
+| **Development Runtime (Dùng chung)** | Website, Chatbot, AI Vector, Demo Payment | `postgres_db_local` / `busbooking` | **KHÔNG** (Dữ liệu thật nghiệp vụ) |
+| OpenAI acceptance riêng (Staging cũ) | Test cách ly harness acceptance | `postgres_openai_it` / `busbooking_openai_it` | Có, chỉ bằng test harness |
+| Fake staging cũ | Vector deterministic mẫu | `nhom01_ai_vector_it_pg` / `busbooking_it` | Không |
+
+## 3. Khởi động PostgreSQL chính với pgvector
+
+Database chính `postgres_db_local` đã được cấu hình sẵn trong `docker-compose.yml` với image `pgvector/pgvector:0.8.7-pg16-bookworm`:
 
 ```powershell
-git clone <repository-url> Nhom01_WWW_Backend
-Set-Location .\Nhom01_WWW_Backend
-git switch feature/spring-ai-pgvector
+docker compose up -d postgres_db_local redis_local
 ```
 
-## 2. Chọn môi trường đúng
-
-| Môi trường | Mục đích | Có được reset? |
-|---|---|---|
-| `busbooking_it` | Fake/deterministic vectors | Không; giữ nguyên 80 vector mẫu |
-| `busbooking_openai_it` trong `postgres_openai_it` | OpenAI acceptance riêng | Có, chỉ bằng harness acceptance |
-| Production | Dữ liệu thật | Không |
-
-Không dùng `localhost:6666/busbooking` từ Maven Docker. Xem [Configuration](02-CONFIGURATION.md).
-
-## 3. Môi trường mới hoàn toàn: PostgreSQL acceptance riêng
-
-Mục đích: tạo một container pgvector độc lập, không sửa PostgreSQL local hay production. Lệnh này **chỉ nên dùng khi container/volume chưa tồn tại**.
-
+Kiểm tra kết nối và pgvector:
 ```powershell
-$network = 'nhom01_www_backend_busbooking-network'
-if ([string]::IsNullOrWhiteSpace($env:POSTGRES_PASSWORD)) { throw 'POSTGRES_PASSWORD is missing.' }
-docker network inspect $network
-docker volume create busbooking_openai_it_data
-docker run -d --name postgres_openai_it --network $network `
-  -e POSTGRES_DB=busbooking_openai_it `
-  -e POSTGRES_USER=postgres `
-  -e POSTGRES_PASSWORD `
-  -v busbooking_openai_it_data:/var/lib/postgresql/data `
-  pgvector/pgvector:0.8.7-pg16-bookworm
-docker exec postgres_openai_it pg_isready -U postgres -d busbooking_openai_it
+docker exec postgres_db_local psql -U postgres -d busbooking -c "SELECT extname, extversion FROM pg_extension WHERE extname = 'vector';"
 ```
 
-Kết quả mong đợi: `accepting connections`. Nếu container đã tồn tại, không xóa nó; kiểm tra bằng `docker inspect postgres_openai_it`.
+Kết quả: `vector | 0.8.7`.
 
 ## 4. Cấu hình API key an toàn
 
-Mục đích: để Spring AI đọc key từ process, không từ source code.
+Mục đích: để Spring AI đọc key từ environment hoặc file cấu hình bí mật, không hard-code trong git.
 
 ```powershell
 if ([string]::IsNullOrWhiteSpace($env:OPENAI_API_KEY)) {
-  throw 'OPENAI_API_KEY is missing in this PowerShell session.'
+  Write-Warning 'OPENAI_API_KEY is not set in this session. Spring will fallback to application config if present.'
 }
 ```
-
-Không in key. File cấu hình dùng `${OPENAI_API_KEY}`. Nếu Codex Extension báo missing nhưng PowerShell có key, chạy Maven Docker trực tiếp với `-e OPENAI_API_KEY`; xem [Troubleshooting](06-TROUBLESHOOTING.md).
 
 ## 5. Chạy migrations
 
-Mục đích: tạo extension và ba bảng vector. Không dùng Bash stdin redirection trong PowerShell.
+Các migrations 001–004 đã được áp dụng trực tiếp vào database `busbooking`:
+- `001-enable-pgvector.sql`
+- `002-create-vector-store.sql`
+- `003-create-vector-ingestion-manifest.sql`
+- `004-create-vector-collection-metadata.sql`
 
+## 6. Kiểm tra dữ liệu nghiệp vụ thật
+
+Database chung `busbooking` đã có sẵn đầy đủ dữ liệu nghiệp vụ thật:
 ```powershell
-Get-ChildItem .\docker\postgres\migrations\*.sql | Sort-Object Name | ForEach-Object {
-  docker cp $_.FullName "postgres_openai_it:/tmp/$($_.Name)"
-  docker exec postgres_openai_it psql -v ON_ERROR_STOP=1 -U postgres `
-    -d busbooking_openai_it -f "/tmp/$($_.Name)"
-}
-```
-
-Kết quả mong đợi: extension `vector` và `vector_store`, `vector_ingestion_manifest`, `vector_collection_metadata` tồn tại. Nếu migration lỗi, dừng và xem [Database và ingestion](03-DATABASE-AND-INGESTION.md); không thử trên production.
-
-## 6. Chuẩn bị dữ liệu nghiệp vụ
-
-Acceptance mẫu yêu cầu đúng 10 Route, 50 Trip, 20 Vehicle. Kiểm tra chỉ đọc:
-
-```powershell
-docker exec postgres_openai_it psql -U postgres -d busbooking_openai_it -c `
+docker exec postgres_db_local psql -U postgres -d busbooking -c `
   "SELECT (SELECT count(*) FROM routes) AS routes, (SELECT count(*) FROM trips) AS trips, (SELECT count(*) FROM vehicles) AS vehicles;"
 ```
+Kết quả thực tế: 83 routes, 50,647 trips, 20 vehicles.
 
-Môi trường mới hoàn toàn chưa có dữ liệu nghiệp vụ sẽ không chạy acceptance được. Restore một backup staging đã được phê duyệt, **không** copy `vector_store` hoặc `vector_ingestion_manifest`.
+## 7. Chạy Ingestion và Semantic Search
 
-## 7. Chạy ingestion
-
-`VectorIngestionService.ingestAll()` là entry point thật. Hiện chưa có REST endpoint, CLI command, startup runner hoặc scheduler để gọi nó — **CHƯA TRIỂN KHAI**. Một admin job hoặc integration được phê duyệt phải inject service này và gọi `ingestAll()` trong profile `ai-vector`.
-
-Để xác minh implementation end-to-end mà không tự viết job mới, chạy OpenAI acceptance theo [Testing guide](05-TESTING-GUIDE.md). Test gọi service thật trên `busbooking_openai_it`.
-
-## 8. Kiểm tra vectors
-
-```powershell
-docker exec postgres_openai_it psql -U postgres -d busbooking_openai_it -c `
-  "SELECT (SELECT count(*) FROM vector_store) AS vectors, (SELECT count(*) FROM vector_ingestion_manifest) AS manifests, (SELECT count(*) FROM vector_collection_metadata) AS identities, (SELECT min(vector_dims(embedding)) FROM vector_store) AS min_dimensions, (SELECT max(vector_dims(embedding)) FROM vector_store) AS max_dimensions;"
-```
-
-Với dữ liệu staging mẫu sau real acceptance: 80 vectors, 80 manifests, 1 identity, dimensions 1536. Đây là số liệu mẫu, không phải ràng buộc production.
-
-## 9. Chạy Semantic Search
-
-`VectorSearchService.search(VectorSearchRequest)` là API Java hiện có. Không có HTTP search endpoint — **CHƯA TRIỂN KHAI**. Ví dụ consumer Java:
-
-```java
-List<VectorSearchResult> results = vectorSearchService.search(
-    new VectorSearchRequest("Tôi muốn đi từ Sài Gòn đến Đà Lạt", 5, null, null, null));
-```
-
-Kết quả được đọc bằng `content`, `metadata`, `similarityScore`. Với query có hướng, metadata filter buộc `TP.HCM → Đà Lạt`; xem [Semantic Search](04-SEMANTIC-SEARCH.md).
-
-## 10. Xác minh thành công
-
-Chạy real acceptance. Kết quả staging mẫu đã xác minh: OpenAI `text-embedding-3-small`, 1536 dimensions, 80 documents, lần ingestion thứ hai ghi 0 document mới, và query Sài Gòn → Đà Lạt trả TP.HCM → Đà Lạt đúng hướng.
-
+Khi kích hoạt profile `ai-vector`, hệ thống đọc/ghi bảng `vector_store` ngay trong database `busbooking`.
+Không copy fake vector sang database chính. Vector Ingestion chỉ chạy qua admin job hoặc service được cấp phép.
