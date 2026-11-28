@@ -161,6 +161,20 @@ class AuthServiceLoginTest {
         assertThrows(BadCredentialsException.class, () -> authService.login(request));
     }
 
+    @Test
+    void lockedAccountCannotRefreshTokensEvenIfVersionMatches() {
+        var request = new vn.edu.iuh.nhom01_www.user.dto.TokenRefreshRequest();
+        request.setRefreshToken("old-refresh");
+        var token = RefreshToken.builder().token("old-refresh").userEmail("locked@example.com").version(4L).build();
+        when(refreshTokenService.findByToken("old-refresh")).thenReturn(java.util.Optional.of(token));
+        when(refreshTokenService.verifyExpiration(token)).thenReturn(token);
+        when(userDetailsService.loadUserByUsername("locked@example.com")).thenReturn(new CustomUserDetails(
+                "locked@example.com", "hash", false, true, true, false, List.of(), 4L));
+        assertEquals(HttpStatus.UNAUTHORIZED, assertThrows(CustomException.class, () -> authService.refreshToken(request)).getStatus());
+        verify(refreshTokenService).deleteByToken(token);
+        verify(jwtUtils, never()).generateToken(any());
+    }
+
     private LoginRequest loginRequest(String username) {
         LoginRequest request = new LoginRequest();
         request.setUsername(username);

@@ -1,32 +1,13 @@
 package vn.edu.iuh.nhom01_www.booking.repository;
 
-import jakarta.persistence.LockModeType;
-import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Lock;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
 import vn.edu.iuh.nhom01_www.booking.model.Booking;
 
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import java.math.BigDecimal;
 
 public interface BookingRepository extends JpaRepository<Booking, Long> {
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("SELECT b FROM Booking b WHERE b.id = :id AND b.customer.id = :customerId")
-    Optional<Booking> findOwnedByIdForUpdate(@Param("id") Long id, @Param("customerId") UUID customerId);
-
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("SELECT b FROM Booking b WHERE b.id = :id")
-    Optional<Booking> findByIdForUpdate(@Param("id") Long id);
-
-    @Query("SELECT COALESCE(SUM(b.totalPrice), 0) FROM Booking b WHERE b.status IN ('PAID', 'COMPLETED', 'PARTIALLY_CANCELLED')")
-    BigDecimal sumPaidAndPartialBookingTotals();
-
-    @Query("SELECT COALESCE(SUM(t.price), 0) FROM Ticket t WHERE t.booking.status = 'PARTIALLY_CANCELLED' AND t.status = 'CANCELLED'")
-    BigDecimal sumCancelledTicketsInPartialBookings();
     List<Booking> findByTripId(Long tripId);
     List<Booking> findByStatus(String status);
     List<Booking> findByCustomer_IdOrderByCreatedAtDesc(UUID customerId);
@@ -34,7 +15,4 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     Optional<Booking> findByIdAndCustomerId(Long bookingId, UUID customerId);
     List<Booking> findByCustomer_PhoneNumberOrderByCreatedAtDesc(String phoneNumber);
     Optional<Booking> findDistinctByTickets_TicketCode(String ticketCode);
-
-    @Query("SELECT b FROM Booking b LEFT JOIN FETCH b.customer c LEFT JOIN FETCH b.trip t ORDER BY b.createdAt DESC")
-    List<Booking> findAllRecent(Pageable pageable);
 }

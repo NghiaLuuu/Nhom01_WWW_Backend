@@ -5,12 +5,14 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import vn.edu.iuh.nhom01_www.cancelrequest.dto.CancelRequestDto;
-import vn.edu.iuh.nhom01_www.cancelrequest.dto.CancelRequestResponse;
-import vn.edu.iuh.nhom01_www.cancelrequest.dto.ResolveCancelRequestDto;
+import vn.edu.iuh.nhom01_www.cancelrequest.model.CancelRequest;
 import vn.edu.iuh.nhom01_www.cancelrequest.service.CancelRequestService;
 import vn.edu.iuh.nhom01_www.common.dto.ApiResponse;
 
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/cancel-requests")
@@ -20,22 +22,23 @@ public class CancelRequestController {
     private final CancelRequestService cancelRequestService;
 
     @PostMapping
-    public ResponseEntity<ApiResponse<CancelRequestResponse>> submitCancelRequest(@Valid @RequestBody CancelRequestDto request) {
-        var created = cancelRequestService.submitCancelRequest(request.getBookingId(), request.getReason());
-        return ResponseEntity.ok(new ApiResponse<>(true, "Yêu cầu hủy vé đã được ghi nhận và đang chờ nhân viên xử lý.", created));
+    public ResponseEntity<ApiResponse<CancelRequest>> submitCancelRequest(@Valid @RequestBody CancelRequestDto request) {
+        CancelRequest created = cancelRequestService.submitCancelRequest(request.getBookingId(), request.getReason());
+        return ResponseEntity.ok(new ApiResponse<>(true, "Cancel request submitted", created));
     }
 
     @GetMapping
-    public ResponseEntity<ApiResponse<List<CancelRequestResponse>>> getPendingRequests(
-            @RequestParam(defaultValue = "PENDING") String status) {
-        return ResponseEntity.ok(new ApiResponse<>(true, "Success", cancelRequestService.getRequests(status)));
+    public ResponseEntity<ApiResponse<List<CancelRequest>>> getPendingRequests() {
+        return ResponseEntity.ok(new ApiResponse<>(true, "Success", Collections.emptyList()));
     }
 
     @PatchMapping("/{id}/resolve")
-    public ResponseEntity<ApiResponse<CancelRequestResponse>> resolveCancelRequest(
-            @PathVariable Long id, @Valid @RequestBody ResolveCancelRequestDto body) {
-        var request = cancelRequestService.resolveCancelRequest(id, body.getIsApproved(), body.getRejectReason());
-        return ResponseEntity.ok(new ApiResponse<>(true,
-                body.getIsApproved() ? "Đã duyệt hủy vé theo yêu cầu của khách hàng." : "Đã từ chối yêu cầu hủy vé.", request));
+    public ResponseEntity<ApiResponse<CancelRequest>> resolveCancelRequest(@PathVariable Long id, @RequestBody Map<String, Object> body) {
+        UUID staffId = UUID.randomUUID(); // Mocking authenticated staff ID
+        boolean isApproved = (boolean) body.getOrDefault("isApproved", false);
+        String rejectReason = (String) body.getOrDefault("rejectReason", "");
+        
+        CancelRequest request = cancelRequestService.resolveCancelRequest(id, staffId, isApproved, rejectReason);
+        return ResponseEntity.ok(new ApiResponse<>(true, "Request resolved", request));
     }
 }

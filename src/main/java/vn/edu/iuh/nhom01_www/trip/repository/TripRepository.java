@@ -10,7 +10,7 @@ import vn.edu.iuh.nhom01_www.trip.model.Trip;
 import java.time.LocalDateTime;
 import java.util.List;
 
-public interface TripRepository extends JpaRepository<Trip, Long> {
+public interface TripRepository extends JpaRepository<Trip, Long>, org.springframework.data.jpa.repository.JpaSpecificationExecutor<Trip> {
 
     List<Trip> findByRoute(Route route);
 

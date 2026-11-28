@@ -1,8 +1,6 @@
 package vn.edu.iuh.nhom01_www.trip.service.impl;
 
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -11,12 +9,9 @@ import vn.edu.iuh.nhom01_www.booking.repository.BookingRepository;
 import vn.edu.iuh.nhom01_www.common.exception.CustomException;
 import vn.edu.iuh.nhom01_www.trip.model.Trip;
 import vn.edu.iuh.nhom01_www.trip.repository.TripRepository;
-import vn.edu.iuh.nhom01_www.trip.service.TripBookingAvailabilityService;
 import vn.edu.iuh.nhom01_www.trip.service.TripService;
+import vn.edu.iuh.nhom01_www.trip.service.TripBookingAvailabilityService;
 
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.util.List;
 
 @Service
@@ -43,65 +38,15 @@ public class TripServiceImpl implements TripService {
 
     @Override
     public List<Trip> getAllTrips() {
-        return getAllTrips(200);
-    }
-
-    @Override
-    public List<Trip> getAllTrips(Integer limit) {
-        int max = (limit != null && limit > 0) ? Math.min(limit, 500) : 200;
-        Pageable pageable = PageRequest.of(0, max);
-        LocalDateTime since = LocalDateTime.now().minusHours(24);
-        List<Trip> trips = tripRepository.findAllUpcomingWithDetails(since, pageable);
-        if (trips.isEmpty()) {
-            trips = tripRepository.findAllRecentWithDetails(pageable);
-        }
-        tripBookingAvailabilityService.populateAvailabilityBatch(trips);
+        List<Trip> trips = tripRepository.findAll();
+        trips.forEach(this::populateAvailableSeats);
         return trips;
     }
 
     @Override
     public List<Trip> searchTrips(String departureLocation, String arrivalLocation, String date) {
-        String dep = (departureLocation != null && !departureLocation.trim().isEmpty()) ? departureLocation.trim() : null;
-        String arr = (arrivalLocation != null && !arrivalLocation.trim().isEmpty()) ? arrivalLocation.trim() : null;
-        Pageable pageable = PageRequest.of(0, 100);
-        LocalDateTime nowMinus15 = LocalDateTime.now().minusMinutes(15);
-
-        // Case 1: Both departure and arrival provided
-        if (dep != null && arr != null) {
-            if (date != null && !date.trim().isEmpty()) {
-                try {
-                    LocalDate parsedDate = LocalDate.parse(date.trim());
-                    LocalDateTime start = parsedDate.atStartOfDay();
-                    LocalDateTime end = parsedDate.atTime(LocalTime.MAX);
-                    List<Trip> trips = tripRepository.searchByRouteAndDate(dep, arr, start, end, pageable);
-                    if (!trips.isEmpty()) {
-                        tripBookingAvailabilityService.populateAvailabilityBatch(trips);
-                        return trips;
-                    }
-                } catch (Exception ignored) {}
-            }
-            List<Trip> trips = tripRepository.searchByRoute(dep, arr, nowMinus15, pageable);
-            tripBookingAvailabilityService.populateAvailabilityBatch(trips);
-            return trips;
-        }
-
-        // Case 2: Only departure provided
-        if (dep != null) {
-            List<Trip> trips = tripRepository.searchByDeparture(dep, nowMinus15, pageable);
-            tripBookingAvailabilityService.populateAvailabilityBatch(trips);
-            return trips;
-        }
-
-        // Case 3: Only arrival provided
-        if (arr != null) {
-            List<Trip> trips = tripRepository.searchByArrival(arr, nowMinus15, pageable);
-            tripBookingAvailabilityService.populateAvailabilityBatch(trips);
-            return trips;
-        }
-
-        // Case 4: No filters provided (Search page default view: show upcoming trips)
-        List<Trip> trips = tripRepository.findUpcomingTrips(nowMinus15, pageable);
-        tripBookingAvailabilityService.populateAvailabilityBatch(trips);
+        List<Trip> trips = tripRepository.findAll();
+        trips.forEach(this::populateAvailableSeats);
         return trips;
     }
 
@@ -111,14 +56,13 @@ public class TripServiceImpl implements TripService {
         populateAvailableSeats(trip);
         return trip;
     }
-
     private void populateAvailableSeats(Trip trip) {
         if (trip == null) return;
-        int available = tripBookingAvailabilityService.getAvailableSeatCount(trip);
-        trip.setAvailableSeats(available);
+        trip.setAvailableSeats(tripBookingAvailabilityService.getAvailableSeatCount(trip));
         trip.setWebBookingOpen(tripBookingAvailabilityService.isWebBookingOpen(trip));
         trip.setPosBookingOpen(tripBookingAvailabilityService.isPosBookingOpen(trip));
     }
+
 
     @Override
     public Trip createTrip(vn.edu.iuh.nhom01_www.trip.dto.TripRequest req) {

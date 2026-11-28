@@ -35,6 +35,8 @@ public abstract class BaseUser {
     private LocalDate dateOfBirth;
 
     @Column(nullable = false)
+    @com.fasterxml.jackson.annotation.JsonProperty(access = com.fasterxml.jackson.annotation.JsonProperty.Access.WRITE_ONLY)
+    @lombok.ToString.Exclude
     private String password;
 
     private String status;
