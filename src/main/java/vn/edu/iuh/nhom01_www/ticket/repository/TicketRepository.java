@@ -1,6 +1,8 @@
 package vn.edu.iuh.nhom01_www.ticket.repository;
 
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -13,6 +15,14 @@ import java.util.Optional;
 
 public interface TicketRepository extends JpaRepository<Ticket, Long> {
     List<Ticket> findByBookingId(Long bookingId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT t FROM Ticket t WHERE t.booking.id = :bookingId ORDER BY t.id")
+    List<Ticket> findByBookingIdForUpdate(@Param("bookingId") Long bookingId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT t FROM Ticket t WHERE t.ticketCode = :ticketCode")
+    Optional<Ticket> findByTicketCodeForUpdate(@Param("ticketCode") String ticketCode);
 
     Optional<Ticket> findByTicketCode(String ticketCode);
 

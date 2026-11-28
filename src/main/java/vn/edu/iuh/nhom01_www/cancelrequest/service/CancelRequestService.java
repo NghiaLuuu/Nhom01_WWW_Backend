@@ -1,10 +1,11 @@
 package vn.edu.iuh.nhom01_www.cancelrequest.service;
 
-import vn.edu.iuh.nhom01_www.cancelrequest.model.CancelRequest;
+import vn.edu.iuh.nhom01_www.cancelrequest.dto.CancelRequestResponse;
 
-import java.util.UUID;
+import java.util.List;
 
 public interface CancelRequestService {
-    CancelRequest submitCancelRequest(Long bookingId, String reason);
-    CancelRequest resolveCancelRequest(Long cancelRequestId, UUID staffId, boolean isApproved, String rejectReason);
+    CancelRequestResponse submitCancelRequest(Long bookingId, String reason);
+    List<CancelRequestResponse> getRequests(String status);
+    CancelRequestResponse resolveCancelRequest(Long cancelRequestId, boolean isApproved, String rejectReason);
 }
