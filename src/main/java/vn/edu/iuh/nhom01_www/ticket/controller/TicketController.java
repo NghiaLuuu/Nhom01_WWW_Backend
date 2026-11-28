@@ -91,6 +91,7 @@ public class TicketController {
      * Hủy vé lẻ cụ thể trong đơn đặt vé (Quy trình trước giờ đóng cổng)
      */
     @PostMapping("/{id}/cancel")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ADMIN', 'TICKET_MANAGE', 'MANAGE_TICKET')")
     public ResponseEntity<ApiResponse<Ticket>> cancelSingleTicket(
             @PathVariable Long id,
             @RequestBody(required = false) Map<String, String> body) {
@@ -144,6 +145,7 @@ public class TicketController {
      * CHÍNH SÁCH 1: Hủy hoàn toàn vé No-Show (không hoàn tiền cho khách đến trễ/vắng mặt)
      */
     @PostMapping("/{id}/no-show/cancel")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ADMIN', 'TICKET_MANAGE', 'MANAGE_TICKET')")
     public ResponseEntity<ApiResponse<Ticket>> cancelNoShowTicket(
             @PathVariable Long id,
             @RequestBody(required = false) Map<String, String> body) {
