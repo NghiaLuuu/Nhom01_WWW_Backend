@@ -59,6 +59,10 @@ public class SecurityConfig {
                         .requestMatchers("/api/chatbot/**").permitAll()
                         .requestMatchers("/api/tracking/**").permitAll()
                         .requestMatchers("/api/recommendations/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/cancel-requests").hasRole("CUSTOMER")
+                        .requestMatchers(HttpMethod.GET, "/api/cancel-requests").hasAnyRole("ADMIN", "STAFF")
+                        .requestMatchers(HttpMethod.PATCH, "/api/cancel-requests/*/resolve").hasAnyRole("ADMIN", "STAFF")
+                        .requestMatchers(HttpMethod.POST, "/api/tickets/*/cancel").hasAnyRole("ADMIN", "STAFF")
                         .anyRequest().authenticated()
                 )
                 .exceptionHandling(exceptions -> exceptions
