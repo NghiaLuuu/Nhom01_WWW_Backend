@@ -22,15 +22,15 @@ public class TripController {
 
     @GetMapping
     @PreAuthorize("hasAuthority('TRIP_MANAGE')")
-    public ResponseEntity<ApiResponse<List<Trip>>> getAllTrips(@RequestParam(required = false) Integer limit) {
-        return ResponseEntity.ok(new ApiResponse<>(true, "Success", tripService.getAllTrips(limit)));
+    public ResponseEntity<ApiResponse<List<Trip>>> getAllTrips() {
+        return ResponseEntity.ok(new ApiResponse<>(true, "Success", tripService.getAllTrips()));
     }
 
     @GetMapping("/search")
     public ResponseEntity<ApiResponse<List<Trip>>> searchTrips(
-            @RequestParam(required = false) String departureLocation,
-            @RequestParam(required = false) String arrivalLocation,
-            @RequestParam(required = false) String date) {
+            @RequestParam String departureLocation,
+            @RequestParam String arrivalLocation,
+            @RequestParam String date) {
         return ResponseEntity.ok(new ApiResponse<>(true, "Success", tripService.searchTrips(departureLocation, arrivalLocation, date)));
     }
 

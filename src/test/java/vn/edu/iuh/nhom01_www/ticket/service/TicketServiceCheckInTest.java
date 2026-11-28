@@ -129,7 +129,7 @@ class TicketServiceCheckInTest {
     @Test
     @DisplayName("Soát vé thành công khi trong khung giờ hợp lệ (30 phút trước giờ chạy)")
     void checkIn_Success_WithinWindow() {
-        when(ticketRepository.findByTicketCode("TK-123456")).thenReturn(Optional.of(validTicket));
+        when(ticketRepository.findByTicketCodeForUpdate("TK-123456")).thenReturn(Optional.of(validTicket));
         when(ticketRepository.save(any(Ticket.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         CheckInRequest request = CheckInRequest.builder()
@@ -151,7 +151,7 @@ class TicketServiceCheckInTest {
     @DisplayName("Từ chối soát vé khi đến quá sớm (trước khi mở cổng 60 phút)")
     void checkIn_Fails_TooEarly() {
         trip.setDepartureTime(LocalDateTime.now().plusMinutes(120));
-        when(ticketRepository.findByTicketCode("TK-123456")).thenReturn(Optional.of(validTicket));
+        when(ticketRepository.findByTicketCodeForUpdate("TK-123456")).thenReturn(Optional.of(validTicket));
 
         CheckInRequest request = CheckInRequest.builder()
                 .ticketCodeOrQr("TK-123456")
@@ -168,7 +168,7 @@ class TicketServiceCheckInTest {
     void checkIn_Fails_GateClosed_AndMarksNoShow() {
         // Departure is 5 minutes from now, but gate closed 10 minutes before departure
         trip.setDepartureTime(LocalDateTime.now().plusMinutes(5));
-        when(ticketRepository.findByTicketCode("TK-123456")).thenReturn(Optional.of(validTicket));
+        when(ticketRepository.findByTicketCodeForUpdate("TK-123456")).thenReturn(Optional.of(validTicket));
         when(ticketRepository.save(any(Ticket.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         CheckInRequest request = CheckInRequest.builder()
@@ -188,7 +188,7 @@ class TicketServiceCheckInTest {
     void checkIn_Fails_AfterDeparture_AndMarksNoShow() {
         // Bus departed 10 minutes ago
         trip.setDepartureTime(LocalDateTime.now().minusMinutes(10));
-        when(ticketRepository.findByTicketCode("TK-123456")).thenReturn(Optional.of(validTicket));
+        when(ticketRepository.findByTicketCodeForUpdate("TK-123456")).thenReturn(Optional.of(validTicket));
         when(ticketRepository.save(any(Ticket.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         CheckInRequest request = CheckInRequest.builder()
@@ -207,7 +207,7 @@ class TicketServiceCheckInTest {
     @DisplayName("Cho phép Nhân viên / Quản lý soát vé cưỡng chế (forceCheckIn) kể cả khi trễ hoặc cổng đã đóng")
     void checkIn_Success_ForceCheckIn_ByStaff() {
         trip.setDepartureTime(LocalDateTime.now().plusMinutes(2));
-        when(ticketRepository.findByTicketCode("TK-123456")).thenReturn(Optional.of(validTicket));
+        when(ticketRepository.findByTicketCodeForUpdate("TK-123456")).thenReturn(Optional.of(validTicket));
         when(currentUserService.isStaffOrAdmin()).thenReturn(true);
         when(ticketRepository.save(any(Ticket.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -229,7 +229,7 @@ class TicketServiceCheckInTest {
     void checkIn_Fails_AlreadyUsed() {
         validTicket.setStatus("USED");
         validTicket.setUsedAt(LocalDateTime.now().minusMinutes(15));
-        when(ticketRepository.findByTicketCode("TK-123456")).thenReturn(Optional.of(validTicket));
+        when(ticketRepository.findByTicketCodeForUpdate("TK-123456")).thenReturn(Optional.of(validTicket));
 
         CheckInRequest request = CheckInRequest.builder()
                 .ticketCodeOrQr("TK-123456")

@@ -1,5 +1,7 @@
 # 🚌 VEXE - Online Bus Ticket Booking System (Backend)
 
+Tài liệu API quản lý khách hàng/nhân viên, duyệt hủy vé và doanh thu: [docs/admin-management-api.md](docs/admin-management-api.md).
+
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.1.2-brightgreen.svg)
 ![Java](https://img.shields.io/badge/Java-17%2B-blue.svg)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-blue.svg)

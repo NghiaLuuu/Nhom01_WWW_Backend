@@ -24,11 +24,11 @@ public interface UserService {
     Staff createStaff(StaffRequest request);
     Staff updateStaff(UUID id, StaffRequest request);
     Staff updateStaffStatus(UUID id, String status);
-    Staff resetStaffPassword(UUID id);
+    Staff resetStaffPassword(UUID id, String newPassword);
 
     List<Customer> getAllCustomers();
     Customer updateCustomerStatus(UUID id, String status);
-    Customer resetCustomerPassword(UUID id);
+    Customer resetCustomerPassword(UUID id, String newPassword);
 
     Object getProfile(String email);
     Object updateProfile(String email, vn.edu.iuh.nhom01_www.user.dto.UpdateProfileRequest request);

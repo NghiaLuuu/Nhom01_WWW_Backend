@@ -147,7 +147,8 @@ public class TicketServiceImpl implements TicketService {
         }
 
         final String finalTicketCode = parsedCode;
-        Ticket ticket = ticketRepository.findByTicketCode(finalTicketCode)
+        // Serialize check-in with staff cancellation so a cancelled ticket cannot be revived by a stale read.
+        Ticket ticket = ticketRepository.findByTicketCodeForUpdate(finalTicketCode)
                 .orElseThrow(() -> new CustomException("Không tìm thấy vé với mã: " + finalTicketCode, HttpStatus.NOT_FOUND));
 
         var trip = ticket.getBooking().getTrip();

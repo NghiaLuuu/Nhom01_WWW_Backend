@@ -47,6 +47,12 @@ public class AuthController {
                 .build());
     }
 
+    @PostMapping("/web-login")
+    @Auditable(action = "LOGIN", entityName = "Auth")
+    public ResponseEntity<ApiResponse<JwtResponse>> webLogin(@Valid @RequestBody LoginRequest request) {
+        return ResponseEntity.ok(new ApiResponse<>(true, "Login successful", authService.webLogin(request)));
+    }
+
     @PostMapping("/refresh-token")
     public ResponseEntity<ApiResponse<JwtResponse>> refreshtoken(@Valid @RequestBody TokenRefreshRequest request) {
         JwtResponse response = authService.refreshToken(request);

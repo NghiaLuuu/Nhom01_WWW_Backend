@@ -23,13 +23,13 @@ public class RoleController {
     private final PermissionRepository permissionRepository;
 
     @GetMapping
-    @PreAuthorize("hasAuthority('STAFF_MANAGE')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ADMIN', 'STAFF_MANAGE')")
     public ResponseEntity<ApiResponse<List<Role>>> getAllRoles() {
         return ResponseEntity.ok(new ApiResponse<>(true, "Success", roleService.getAllRoles()));
     }
 
     @GetMapping("/permissions")
-    @PreAuthorize("hasAuthority('STAFF_MANAGE')")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ADMIN', 'STAFF_MANAGE')")
     public ResponseEntity<ApiResponse<List<Permission>>> getAllPermissions() {
         return ResponseEntity.ok(new ApiResponse<>(true, "Success", permissionRepository.findAll()));
     }

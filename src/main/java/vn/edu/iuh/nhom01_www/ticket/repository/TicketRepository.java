@@ -1,6 +1,8 @@
 package vn.edu.iuh.nhom01_www.ticket.repository;
 
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -13,6 +15,14 @@ import java.util.Optional;
 
 public interface TicketRepository extends JpaRepository<Ticket, Long> {
     List<Ticket> findByBookingId(Long bookingId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT t FROM Ticket t WHERE t.booking.id = :bookingId ORDER BY t.id")
+    List<Ticket> findByBookingIdForUpdate(@Param("bookingId") Long bookingId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT t FROM Ticket t WHERE t.ticketCode = :ticketCode")
+    Optional<Ticket> findByTicketCodeForUpdate(@Param("ticketCode") String ticketCode);
 
     Optional<Ticket> findByTicketCode(String ticketCode);
 
@@ -27,12 +37,6 @@ public interface TicketRepository extends JpaRepository<Ticket, Long> {
            "WHERE t.booking.trip.id = :tripId " +
            "AND t.status IN ('ISSUED', 'RESERVED', 'USED')")
     List<Long> findBookedSeatIdsByTripId(@Param("tripId") Long tripId);
-
-    @Query("SELECT b.trip.id, COUNT(DISTINCT t.seat.id) FROM Ticket t JOIN t.booking b " +
-           "WHERE b.trip.id IN :tripIds " +
-           "AND t.status IN ('ISSUED', 'RESERVED', 'USED') " +
-           "GROUP BY b.trip.id")
-    List<Object[]> countBookedSeatsByTripIds(@Param("tripIds") List<Long> tripIds);
 
     @Query("SELECT t FROM Ticket t WHERE t.seat.id IN :seatIds AND t.booking.trip.id = :tripId " +
            "AND t.status IN ('ISSUED', 'RESERVED', 'USED')")
